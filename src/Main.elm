@@ -7,6 +7,7 @@ import Html.Attributes exposing (..)
 import Dict exposing (..)
 import Array exposing (..)
 import Http
+import Url.Builder as UrlB
 import Json.Decode as Decode exposing (..)
 import Json.Decode.Pipeline as DecodeP exposing (..)
 
@@ -36,7 +37,8 @@ type alias Service =
 
 type alias Endpoint =
   { name: String
-  , url: String
+  , baseUrl: String
+  , path: List String
   }
 
 
@@ -45,6 +47,7 @@ type alias Timeline =
   , serviceName: String
   , endpointName: String
   , articleIds: List String
+  , options: Dict String String
   }
 
 type ArticleExtension
@@ -80,22 +83,23 @@ init _ =
   ( { services =  Dict.fromList
         [ initTwitter ]
     , timelines =
-      [ initTimeline "Twitter" "Home Timeline" "Home"
-      , initTimeline "Twitter" "List" "Art"
-      , initTimeline "Twitter" "Search" "1draw"
-      , initTimeline "Twitter" "User Timeline" "User"
+      [ initTimeline "Twitter" "Home Timeline" "Home" Dict.empty
+      , initTimeline "Twitter" "List" "Art" (Dict.fromList [ ("slug", "Art"), ("owner_screen_name", "misabiko") ])
+      , initTimeline "Twitter" "Search" "1draw" (Dict.fromList [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き"), ("result_type", "recent") ])
+      , initTimeline "Twitter" "User Timeline" "User" Dict.empty
       ]
     }
   , Cmd.none
   )
 
 
-initTimeline : String -> String -> String -> Timeline
-initTimeline serviceName endpointName title =
+initTimeline : String -> String -> String -> Dict String String -> Timeline
+initTimeline serviceName endpointName title options =
   { title = title
   , serviceName = serviceName
   , endpointName = endpointName
   , articleIds = []
+  , options = options
   }
 
 
@@ -104,10 +108,10 @@ initTwitter =
   ( "Twitter"
   , { name = "Twitter"
     , endpoints = Dict.fromList
-        [ ( "Home Timeline", { name = "Home Timeline", url = "http://127.0.0.1:5000/home_timeline" } )
-        , ( "User Timeline", { name = "User Timeline", url = "http://127.0.0.1:5000/user_timeline" } )
-        , ( "Search", { name = "Search", url = "http://127.0.0.1:5000/search" } )
-        , ( "List", { name = "List", url = "http://127.0.0.1:5000/list" } )
+        [ ( "Home Timeline", { name = "Home Timeline", baseUrl = "http://127.0.0.1:5000", path = [ "home_timeline" ] } )
+        , ( "User Timeline", { name = "User Timeline", baseUrl = "http://127.0.0.1:5000", path = [ "user_timeline" ] } )
+        , ( "Search", { name = "Search", baseUrl = "http://127.0.0.1:5000", path = [ "search" ] } )
+        , ( "List", { name = "List", baseUrl = "http://127.0.0.1:5000", path = [ "list" ] } )
         ]
     , articles = Dict.empty
     }
@@ -318,9 +322,13 @@ viewTweet article =
 getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
   Http.get
-    { url = endpoint.url
+    { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (dictToQueries timeline.options)
     , expect = Http.expectJson (GotPayload service timeline) payloadResponseDecoder
     }
+
+dictToQueries : Dict String String -> List UrlB.QueryParameter
+dictToQueries queries =
+  List.map (\option -> UrlB.string (Tuple.first option) (Tuple.second option)) (Dict.toList queries)
 
 payloadDecoder : Decoder (List Article)
 payloadDecoder =
