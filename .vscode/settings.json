@@ -1,0 +1,20 @@
+{
+    "compile-hero.disable-compile-files-on-did-save-code": true,
+    "liveSassCompile.settings.formats": [
+        {
+            "format": "expanded",
+            "extensionName": ".css",
+            "savePath": "/dist"
+        }
+    ],
+    "liveSassCompile.settings.includeItems": [
+        "src/style.sass"
+    ],
+    "liveServer.settings.ignoreFiles": [
+        ".vscode/**",
+        "src/Main.elm",
+        "**/*.scss",
+        "**/*.sass",
+        "**/*.ts"
+    ]
+}

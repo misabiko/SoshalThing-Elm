@@ -1,0 +1,62 @@
+@use 'core' as *
+@use 'masonry' as *
+
+.timeline
+	@include pretty-scrollbar
+
+	color: $text
+	height: 100%
+	padding: 0 5px
+	box-sizing: border-box
+	display: flex
+	flex-flow: column
+
+.timelineHeader
+	height: 50px
+	line-height: 50px
+	padding-left: 25px
+	background-color: $dark
+	display: flex
+	justify-content: space-between
+
+	strong
+		vertical-align: middle
+
+	&.timelineInvalid
+		background-color: $dark-error
+
+	& .icon i
+		color: $white-ter
+
+.timelineLeftHeader
+	display: flex
+
+.timelineButtons > button
+	@include borderless-button(0 1.6rem)
+	height: 100%
+
+.timelineArticles
+	overflow-y: scroll
+	overflow-x: hidden
+	flex-grow: 1
+	height: 100%
+	width: 500px
+
+.timelineOptions
+	background-color: $scheme-main-ter
+	padding: 1rem
+	display: flex
+	flex-direction: column
+	align-items: flex-start
+
+	& input[type="number"]
+		width: 200px
+
+#timelineContainer
+	@include pretty-scrollbar
+
+	height: 100%
+	overflow-x: scroll
+	overflow-y: hidden
+	display: flex
+	flex-grow: 1

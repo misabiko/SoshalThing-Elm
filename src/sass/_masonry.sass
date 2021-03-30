@@ -1,0 +1,20 @@
+.timelineArticles.timelineMasonry
+	display: flex
+	flex-wrap: nowrap
+	align-items: flex-start
+	align-content: flex-start
+	position: relative
+	width: fit-content
+
+	&.masonrySqueezed
+		width: 100%
+
+.masonryColumn
+	flex: 1 1 0
+	width: 500px
+
+.masonrySqueezed .masonryColumn
+	width: unset
+
+.masonryColumn img
+	width: 100%

@@ -1,0 +1,28 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "elm make src/Main.elm --output=dist/main.js",
+            "problemMatcher": [
+                "$elm-review"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build sass",
+            "type": "shell",
+            "command": "sass.cmd -I bulma src/sass/index.sass dist/style.css",
+            "group": "build",
+            "problemMatcher": [
+                "$node-sass"
+            ]
+        }
+    ]
+}
