@@ -29,7 +29,7 @@ main =
 
 type alias Service =
   { name: String
-  , endpoints: Array Endpoint
+  , endpoints: Dict String Endpoint
   , articles: Dict String Article
   }
 
@@ -42,8 +42,8 @@ type alias Endpoint =
 
 type alias Timeline =
   { title: String
-  , serviceId: Int
-  , endpointId: Int
+  , serviceName: String
+  , endpointName: String
   , articleIds: List String
   }
 
@@ -70,46 +70,48 @@ type alias Article =
   }
 
 type alias Model =
-  { services: Array Service
+  { services: Dict String Service
   , timelines: List Timeline
   }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-  ( { services =  Array.fromList
+  ( { services =  Dict.fromList
         [ initTwitter ]
     , timelines =
-      [ initTimeline 0 0 "Home"
-    --, initTimeline 0 3 "Art"
-    --, initTimeline 0 2 "1draw"
-    --, initTimeline 0 1 "User"
+      [ initTimeline "Twitter" "Home Timeline" "Home"
+      , initTimeline "Twitter" "List" "Art"
+      , initTimeline "Twitter" "Search" "1draw"
+      , initTimeline "Twitter" "User Timeline" "User"
       ]
     }
   , Cmd.none
   )
 
 
-initTimeline : Int -> Int -> String -> Timeline
-initTimeline serviceId endpointId title =
+initTimeline : String -> String -> String -> Timeline
+initTimeline serviceName endpointName title =
   { title = title
-  , serviceId = serviceId
-  , endpointId = endpointId
+  , serviceName = serviceName
+  , endpointName = endpointName
   , articleIds = []
   }
 
 
-initTwitter : Service
+initTwitter : (String, Service)
 initTwitter =
-  { name = "Twitter"
-  , endpoints = Array.fromList
-      [ { name = "Home Timeline", url = "http://127.0.0.1:5000/home_timeline" }
-      , { name = "User Timeline", url = "http://127.0.0.1:5000/user_timeline" }
-      , { name = "Search", url = "http://127.0.0.1:5000/search" }
-      , { name = "List", url = "http://127.0.0.1:5000/list" }
-      ]
-  , articles = Dict.empty
-  }
+  ( "Twitter"
+  , { name = "Twitter"
+    , endpoints = Dict.fromList
+        [ ( "Home Timeline", { name = "Home Timeline", url = "http://127.0.0.1:5000/home_timeline" } )
+        , ( "User Timeline", { name = "User Timeline", url = "http://127.0.0.1:5000/user_timeline" } )
+        , ( "Search", { name = "Search", url = "http://127.0.0.1:5000/search" } )
+        , ( "List", { name = "List", url = "http://127.0.0.1:5000/list" } )
+        ]
+    , articles = Dict.empty
+    }
+  )
 
 
 -- UPDATE
@@ -118,19 +120,19 @@ type alias Payload =
   Result (List (String, Int)) (List Article)
 
 type Msg
-  = GotPayload (Result Http.Error Payload)
-  | Refresh Endpoint
+  = GotPayload Service Timeline (Result Http.Error Payload)
+  | Refresh Service Endpoint Timeline
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
   case msg of
-    GotPayload result ->
+    GotPayload service timeline result ->
       case result of
         Ok payloadResult ->
           case payloadResult of
             Ok articles ->
-              updateArticles articles model
+              updateArticles service timeline articles model
 
             Err errors ->
               let
@@ -143,14 +145,14 @@ update msg model =
           in
             (model, Cmd.none)
 
-    Refresh endpoint ->
-      (model, getEndpoint endpoint)
+    Refresh service endpoint timeline ->
+      (model, getEndpoint service endpoint timeline)
 
 
-updateArticles : List Article -> Model -> ( Model, Cmd Msg )
-updateArticles articles model =
-  ( { model | services = Array.map (updateServiceArticles articles) model.services
-            , timelines = updateTimelineArticles (List.map .id articles) model.timelines
+updateArticles : Service -> Timeline -> List Article -> Model -> ( Model, Cmd Msg )
+updateArticles service timeline articles model =
+  ( { model | services = Dict.insert service.name (updateServiceArticles articles service) model.services
+            , timelines = updateTimelineArticles (List.map .id articles) timeline.title model.timelines
     }
   , Cmd.none
   )
@@ -167,9 +169,14 @@ listToDict articles =
     <| List.map (\article -> (article.id, article)) articles
 
 
-updateTimelineArticles : List String -> List Timeline ->  List Timeline
-updateTimelineArticles articleIds timelines =
-  List.map (\timeline -> { timeline | articleIds = timeline.articleIds ++ articleIds }) timelines
+updateTimelineArticles : List String -> String -> List Timeline -> List Timeline
+updateTimelineArticles articleIds timelineTitle timelines =
+  List.map (\timeline -> 
+    if timeline.title == timelineTitle then
+      { timeline | articleIds = timeline.articleIds ++ articleIds }
+    else
+      timeline)
+    timelines
 
 -- SUBSCRIPTIONS
 
@@ -203,12 +210,12 @@ viewIcon icon iconType size =
 
 viewTimeline : Model -> Timeline -> Html Msg
 viewTimeline model timeline =
-  case (Array.get timeline.serviceId model.services) of
+  case (Dict.get timeline.serviceName model.services) of
     Nothing ->
       text (Debug.log (timeline.title ++ " Error") "Couldn't find service.")
     
     Just service ->
-      case (Array.get timeline.endpointId service.endpoints) of
+      case (Dict.get timeline.endpointName service.endpoints) of
         Nothing ->
           text (Debug.log (timeline.title ++ " Error") "Couldn't find endpoint.")
         
@@ -217,7 +224,7 @@ viewTimeline model timeline =
             [ div [ class "timelineHeader" ]
               [ strong [] [ text timeline.title ]
               , div [ class "timelineButtons" ]
-                  [ button [ onClick (Refresh endpoint) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
+                  [ button [ onClick (Refresh service endpoint timeline) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
               ]
             , viewContainer (getValues service.articles timeline.articleIds)
             ]
@@ -308,11 +315,11 @@ viewTweet article =
 -- HTTP
 
 
-getEndpoint : Endpoint -> Cmd Msg
-getEndpoint endpoint =
+getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
+getEndpoint service endpoint timeline =
   Http.get
     { url = endpoint.url
-    , expect = Http.expectJson GotPayload payloadResponseDecoder
+    , expect = Http.expectJson (GotPayload service timeline) payloadResponseDecoder
     }
 
 payloadDecoder : Decoder (List Article)
