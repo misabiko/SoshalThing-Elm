@@ -332,7 +332,13 @@ dictToQueries queries =
 
 payloadDecoder : Decoder (List Article)
 payloadDecoder =
-  Decode.list tweetDecoder
+  andThen (\maybeStatuses ->
+       case maybeStatuses of
+          Just statuses ->
+            Decode.succeed statuses
+          _ ->
+            Decode.list tweetDecoder) (maybe (field "statuses" (Decode.list tweetDecoder)))
+
 
 tweetDecoder : Decoder Article
 tweetDecoder =
