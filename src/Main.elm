@@ -309,51 +309,41 @@ viewContainer timeModel articles =
   div [ class "timelineArticles" ] (List.map (viewTweet timeModel) articles)
 
 
-viewTweetHeader : TimeModel -> Article -> Maybe (Html Msg)
-viewTweetHeader timeModel article =
-  case (getSocialData article) of
-    Just social ->
-      div [ class "articleHeader" ]
-        [ a [ class "names"
-            , href ("https://twitter.com/" ++ social.authorHandle)
-            , target "_blank"
-            , rel "noopener noreferrer"
-            ]
-            [ strong [] [ text social.authorName ]
-            , small [] [ text ("@" ++ social.authorHandle) ]
-            ]
-        , span [ class "timestamp" ]
-            [ small
-              [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
-              [ text (TimeParser.timeFormat timeModel article.creationDate) ]
-            ]
+viewTweetHeader : TimeModel -> Article -> SocialData -> Html Msg
+viewTweetHeader timeModel article social =
+  div [ class "articleHeader" ]
+    [ a [ class "names"
+        , href ("https://twitter.com/" ++ social.authorHandle)
+        , target "_blank"
+        , rel "noopener noreferrer"
         ]
-      |> Just
-
-    Nothing -> Nothing
-
-
-viewTweetButtons : Article -> Maybe (Html Msg)
-viewTweetButtons article =
-  case (getSocialData article) of
-    Just social ->
-      nav [ class "level", class "is-mobile" ]
-        [ div [ class "level-left" ]
-            [ a [ class "level-item", class "articleButton", class "repostButton" ]
-                [ viewIcon "fa-retweet" "fas" ""
-                , span [] [ text (String.fromInt social.repostCount) ]
-                ]
-            , a [ class "level-item", class "articleButton", class "likeButton" ]
-                [ viewIcon "fa-heart" (if social.liked then "fas" else "far") ""
-                , span [] [ text (String.fromInt social.likeCount) ]
-                ]
-            , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
-                [ viewIcon "fa-ellipsis-h" "fas" "" ]
-            ]
+        [ strong [] [ text social.authorName ]
+        , small [] [ text ("@" ++ social.authorHandle) ]
         ]
-      |> Just
+    , span [ class "timestamp" ]
+        [ small
+          [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
+          [ text (TimeParser.timeFormat timeModel article.creationDate) ]
+        ]
+    ]
 
-    Nothing -> Nothing
+
+viewTweetButtons : Article -> SocialData -> Html Msg
+viewTweetButtons article social =
+  nav [ class "level", class "is-mobile" ]
+    [ div [ class "level-left" ]
+        [ a [ class "level-item", class "articleButton", class "repostButton" ]
+            [ viewIcon "fa-retweet" "fas" ""
+            , span [] [ text (String.fromInt social.repostCount) ]
+            ]
+        , a [ class "level-item", class "articleButton", class "likeButton" ]
+            [ viewIcon "fa-heart" (if social.liked then "fas" else "far") ""
+            , span [] [ text (String.fromInt social.likeCount) ]
+            ]
+        , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
+            [ viewIcon "fa-ellipsis-h" "fas" "" ]
+        ]
+    ]
 
 
 viewMaybe : Maybe (Html Msg) -> List (Html Msg)
@@ -409,12 +399,12 @@ viewTweetSkeleton timeModel parts article =
             ]
           , div [ class "media-content" ]
               ( [ div [ class "content" ]
-                  ((viewMaybe (viewTweetHeader timeModel article))
-                  ++ [ div [ class "tweet-paragraph" ] [ text textStr ]
-                  ])
+                  [ (viewTweetHeader timeModel article social)
+                  , div [ class "tweet-paragraph" ] [ text textStr ]
+                  ]
               ]
               ++ (viewMaybe parts.extra)
-              ++ (viewMaybe (viewTweetButtons article))
+              ++ [viewTweetButtons article social]
               )
           ]
         ]
