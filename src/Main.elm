@@ -11,7 +11,6 @@ import Task
 import Url.Builder as UrlB
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
-import List.Extra as ListE
 
 import TimeParser
 
@@ -57,6 +56,7 @@ type alias Timeline =
 
 type ArticleExtension
   = Social SocialData
+  | Text String
   | Share ShareData
   | Quote String
 
@@ -84,7 +84,6 @@ type alias ShareData =
 type alias Article =
   { id: String
   , creationDate: Time.Posix
-  , text: String
   , extensions : Dict String ArticleExtension
   }
 
@@ -312,55 +311,47 @@ viewContainer timeModel articles =
 
 viewTweetHeader : TimeModel -> Article -> Maybe (Html Msg)
 viewTweetHeader timeModel article =
-  case (Dict.get "Social" article.extensions) of
-    Just ext ->
-      case ext of
-        Social social ->
-          div [ class "articleHeader" ]
-            [ a [ class "names"
-                , href ("https://twitter.com/" ++ social.authorHandle)
-                , target "_blank"
-                , rel "noopener noreferrer"
-                ]
-                [ strong [] [ text social.authorName ]
-                , small [] [ text ("@" ++ social.authorHandle) ]
-                ]
-            , span [ class "timestamp" ]
-                [ small
-                  [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
-                  [ text (TimeParser.timeFormat timeModel article.creationDate) ]
-                ]
+  case (getSocialData article) of
+    Just social ->
+      div [ class "articleHeader" ]
+        [ a [ class "names"
+            , href ("https://twitter.com/" ++ social.authorHandle)
+            , target "_blank"
+            , rel "noopener noreferrer"
             ]
-          |> Just
-
-        _ -> Nothing
+            [ strong [] [ text social.authorName ]
+            , small [] [ text ("@" ++ social.authorHandle) ]
+            ]
+        , span [ class "timestamp" ]
+            [ small
+              [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
+              [ text (TimeParser.timeFormat timeModel article.creationDate) ]
+            ]
+        ]
+      |> Just
 
     Nothing -> Nothing
 
 
 viewTweetButtons : Article -> Maybe (Html Msg)
 viewTweetButtons article =
-  case (Dict.get "Social" article.extensions) of
-    Just ext ->
-      case ext of
-        Social social ->
-          nav [ class "level", class "is-mobile" ]
-            [ div [ class "level-left" ]
-                [ a [ class "level-item", class "articleButton", class "repostButton" ]
-                    [ viewIcon "fa-retweet" "fas" ""
-                    , span [] [ text (String.fromInt social.repostCount) ]
-                    ]
-                , a [ class "level-item", class "articleButton", class "likeButton" ]
-                    [ viewIcon "fa-heart" (if social.liked then "fas" else "far") ""
-                    , span [] [ text (String.fromInt social.likeCount) ]
-                    ]
-                , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
-                    [ viewIcon "fa-ellipsis-h" "fas" "" ]
+  case (getSocialData article) of
+    Just social ->
+      nav [ class "level", class "is-mobile" ]
+        [ div [ class "level-left" ]
+            [ a [ class "level-item", class "articleButton", class "repostButton" ]
+                [ viewIcon "fa-retweet" "fas" ""
+                , span [] [ text (String.fromInt social.repostCount) ]
                 ]
+            , a [ class "level-item", class "articleButton", class "likeButton" ]
+                [ viewIcon "fa-heart" (if social.liked then "fas" else "far") ""
+                , span [] [ text (String.fromInt social.likeCount) ]
+                ]
+            , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
+                [ viewIcon "fa-ellipsis-h" "fas" "" ]
             ]
-          |> Just
-
-        _ -> Nothing
+        ]
+      |> Just
 
     Nothing -> Nothing
 
@@ -381,37 +372,57 @@ type alias TweetSkeletonParts =
   }
 
 
-viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Article -> Html Msg
-viewTweetSkeleton timeModel parts article =
+getTextData : Article -> Maybe String
+getTextData article =
+  case (Dict.get "Text" article.extensions) of
+    Just ext ->
+      case ext of
+        Text text -> Just text
+
+        _ -> Nothing
+    
+    Nothing -> Nothing
+
+
+getSocialData : Article -> Maybe SocialData
+getSocialData article =
   case (Dict.get "Social" article.extensions) of
     Just ext ->
       case ext of
-        Social social ->
-          Html.article [ class "article" ]
-            ((viewMaybe parts.superHeader)
-            ++ [ div [ class "media" ]
-              [ figure [ class "media-left" ]
-                [ p [ class "image", class "is-64x64" ]
-                  [ img [ alt (social.authorHandle ++ "'s avatar"), src social.authorAvatar ] [] ]
-                ]
-              , div [ class "media-content" ]
-                  ( [ div [ class "content" ]
-                      ((viewMaybe (viewTweetHeader timeModel article))
-                      ++ [ div [ class "tweet-paragraph" ] [ text article.text ]
-                      ])
-                  ]
-                  ++ (viewMaybe parts.extra)
-                  ++ (viewMaybe (viewTweetButtons article))
-                  )
-              ]
+        Social data -> Just data
+
+        _ -> Nothing
+    
+    Nothing -> Nothing
+
+
+viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Article -> Html Msg
+viewTweetSkeleton timeModel parts article =
+  case ((getTextData article, getSocialData article)) of
+    (Just textStr, Just social) ->
+      Html.article [ class "article" ]
+        ((viewMaybe parts.superHeader)
+        ++ [ div [ class "media" ]
+          [ figure [ class "media-left" ]
+            [ p [ class "image", class "is-64x64" ]
+              [ img [ alt (social.authorHandle ++ "'s avatar"), src social.authorAvatar ] [] ]
             ]
-            ++ (viewMaybe parts.footer)
-            )
+          , div [ class "media-content" ]
+              ( [ div [ class "content" ]
+                  ((viewMaybe (viewTweetHeader timeModel article))
+                  ++ [ div [ class "tweet-paragraph" ] [ text textStr ]
+                  ])
+              ]
+              ++ (viewMaybe parts.extra)
+              ++ (viewMaybe (viewTweetButtons article))
+              )
+          ]
+        ]
+        ++ (viewMaybe parts.footer)
+        )
 
-        _ -> Html.article [ class "article" ] [ text "Couldn't find social extension" ]
-
-    Nothing -> 
-      Html.article [ class "article" ] [ text "Couldn't find social extension" ]
+    _ ->
+      Html.article [ class "article" ] [ text "Couldn't find text and social extension" ]
 
 viewTweet : TimeModel -> Article -> Html Msg
 viewTweet timeModel article =
@@ -496,10 +507,6 @@ topTweetDecoder =
       TimeParser.tweetTimeDecoder
       (field "created_at" string)
     )
-    |> DecodeP.custom (Decode.oneOf
-      [ field "text" string
-      , field "full_text" string
-      ])
     |> DecodeP.custom extensionsDecoder
 
 
@@ -507,13 +514,18 @@ extensionsDecoder : Decoder (Dict String ArticleExtension)
 extensionsDecoder =
   Decode.map Dict.fromList
     (Decode.map maybeListCollapse (
-      Decode.succeed List.append
+      (Decode.succeed List.append
         |> DecodeP.custom
-            (Decode.succeed List.append
-              |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
-              |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
-            )
-        |> DecodeP.custom (extensionDecoder "Quote" quoteDecoder)
+          (Decode.succeed List.append
+            |> DecodeP.custom
+                (Decode.succeed List.append
+                  |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
+                  |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
+                )
+            |> DecodeP.custom (extensionDecoder "Quote" quoteDecoder)
+          )
+        |> DecodeP.custom (extensionDecoder "Text" textDecoder)
+      )
     ))
 
 
@@ -555,6 +567,19 @@ quoteDecoder =
   Decode.succeed identity
     |> DecodeP.requiredAt ["quoted_status", "id_str"] string
     |> Decode.map Quote
+
+
+textDecoder : Decoder ArticleExtension
+textDecoder =
+  Decode.succeed identity
+    |> DecodeP.custom (
+      Decode.oneOf
+        [ field "text" string
+        , field "full_text" string
+        ]
+    )
+    |> Decode.map Text
+
 
 payloadErrorsDecoder : Decoder (List (String, Int))
 payloadErrorsDecoder =
