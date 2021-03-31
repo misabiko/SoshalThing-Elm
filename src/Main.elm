@@ -302,7 +302,10 @@ viewTweetHeader timeModel article =
             , small [] [ text ("@" ++ social.authorHandle) ]
             ]
         , span [ class "timestamp" ]
-            [ small [] [ text (TimeParser.timeFormat timeModel article.creationDate) ] ]
+            [ small
+              [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
+              [ text (TimeParser.timeFormat timeModel article.creationDate) ]
+            ]
         ]
 viewTweetButtons : Article -> Html Msg
 viewTweetButtons article =
