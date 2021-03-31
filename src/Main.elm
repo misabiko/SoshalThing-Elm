@@ -4,12 +4,11 @@ import Browser
 import Html exposing (..)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
-import Dict exposing (..)
-import Array exposing (..)
+import Dict exposing (Dict)
 import Http
 import Url.Builder as UrlB
-import Json.Decode as Decode exposing (..)
-import Json.Decode.Pipeline as DecodeP exposing (..)
+import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
+import Json.Decode.Pipeline as DecodeP
 
 
 -- MAIN
@@ -351,12 +350,13 @@ dictToQueries queries =
 
 payloadDecoder : Decoder (List Article)
 payloadDecoder =
-  andThen (\maybeStatuses ->
-       case maybeStatuses of
+  Decode.andThen (\maybeStatuses ->
+        case maybeStatuses of
           Just statuses ->
             Decode.succeed statuses
           _ ->
-            Decode.list tweetDecoder) (maybe (field "statuses" (Decode.list tweetDecoder)))
+            Decode.list tweetDecoder)
+        (maybe (field "statuses" (Decode.list tweetDecoder)))
 
 
 tweetDecoder : Decoder Article
@@ -364,7 +364,7 @@ tweetDecoder =
   Decode.succeed Article
     |> DecodeP.required "id_str" string
     |> DecodeP.required "created_at" string -- TODO Parse
-    |> DecodeP.custom (oneOf
+    |> DecodeP.custom (Decode.oneOf
       [ field "text" string
       , field "full_text" string
       ])
@@ -386,16 +386,17 @@ socialDecoder =
 payloadErrorsDecoder : Decoder (List (String, Int))
 payloadErrorsDecoder =
   Decode.list 
-    <| map2 Tuple.pair
+    <| Decode.map2 Tuple.pair
       (field "message" string)
       (field "code" int)
 
 
 payloadResponseDecoder : Decoder Payload
 payloadResponseDecoder =
-  andThen (\maybeErrors ->
-       case maybeErrors of
+  Decode.andThen (\maybeErrors ->
+        case maybeErrors of
           Just errors ->
             Decode.succeed (Err errors)
           _ ->
-            Decode.map Ok payloadDecoder) (maybe (field "errors" payloadErrorsDecoder))
+            Decode.map Ok payloadDecoder)
+        (maybe (field "errors" payloadErrorsDecoder))
