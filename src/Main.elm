@@ -7,6 +7,7 @@ import Html.Attributes exposing (..)
 import Dict exposing (Dict)
 import Http
 import Time
+import Task
 import Url.Builder as UrlB
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
@@ -79,9 +80,15 @@ type alias ArticleCollection =
   Dict String Article
 
 
+type alias TimeModel =
+  { zone : Time.Zone
+  , lastNow : Time.Posix
+  }
+
 type alias Model =
   { services: Dict String Service
   , timelines: List Timeline
+  , time : TimeModel
   }
 
 
@@ -95,8 +102,15 @@ init _ =
       , initTimeline "Twitter" "Search" "1draw" (Dict.fromList [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き"), ("result_type", "recent") ])
       , initTimeline "Twitter" "User Timeline" "User" Dict.empty
       ]
+    , time =
+        { zone = Time.utc
+        , lastNow = Time.millisToPosix 0
+        }
     }
-  , Cmd.none
+  , Cmd.batch
+      [ Task.perform AdjustTimeZone Time.here
+      , Task.perform Tick Time.now
+      ]
   )
 
 
@@ -133,6 +147,8 @@ type alias Payload =
 type Msg
   = GotPayload Service Timeline (Result Http.Error Payload)
   | Refresh Service Endpoint Timeline
+  | AdjustTimeZone Time.Zone
+  | Tick Time.Posix
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -158,6 +174,16 @@ update msg model =
 
     Refresh service endpoint timeline ->
       (model, getEndpoint service endpoint timeline)
+
+    AdjustTimeZone newZone ->
+      ( { model | time = (\t -> { t | zone = newZone }) model.time }
+      , Cmd.none
+      )
+
+    Tick now ->
+      ( { model | time = (\t -> { t | lastNow = now }) model.time }
+      , Cmd.none
+      )
 
 
 updateArticles : Service -> Timeline -> List Article -> Model -> ( Model, Cmd Msg )
@@ -251,19 +277,19 @@ viewTimeline model timeline =
               , div [ class "timelineButtons" ]
                   [ button [ onClick (Refresh service endpoint timeline) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
               ]
-            , viewContainer (getValues service.articles timeline.articleIds)
+            , viewContainer model.time (getValues service.articles timeline.articleIds)
             ]
 
 getValues : Dict comparable v -> List comparable -> List v
 getValues dict keys =
   List.filterMap (\id -> Dict.get id dict) keys
 
-viewContainer : List Article -> Html Msg
-viewContainer articles =
-  div [ class "timelineArticles" ] (List.map viewTweet articles)
+viewContainer : TimeModel -> List Article -> Html Msg
+viewContainer timeModel articles =
+  div [ class "timelineArticles" ] (List.map (viewTweet timeModel) articles)
 
-viewTweetHeader : Article -> Html Msg
-viewTweetHeader article =
+viewTweetHeader : TimeModel -> Article -> Html Msg
+viewTweetHeader timeModel article =
   case article.extension of
     Social social ->
       div [ class "articleHeader" ]
@@ -276,7 +302,7 @@ viewTweetHeader article =
             , small [] [ text ("@" ++ social.authorHandle) ]
             ]
         , span [ class "timestamp" ]
-            [ small [] [ text (TimeParser.timeFormat article.creationDate) ] ]
+            [ small [] [ text (TimeParser.timeFormat timeModel article.creationDate) ] ]
         ]
 viewTweetButtons : Article -> Html Msg
 viewTweetButtons article =
@@ -305,8 +331,8 @@ viewMaybe maybeElement =
     Nothing ->
       []
 
-viewTweetSkeleton : Maybe (Html Msg) -> Maybe (Html Msg) -> Maybe (Html Msg) -> Article -> Html Msg
-viewTweetSkeleton superHeader extra footer article =
+viewTweetSkeleton : TimeModel -> Maybe (Html Msg) -> Maybe (Html Msg) -> Maybe (Html Msg) -> Article -> Html Msg
+viewTweetSkeleton timeModel superHeader extra footer article =
   case article.extension of
     Social social ->
       Html.article [ class "article" ]
@@ -318,7 +344,7 @@ viewTweetSkeleton superHeader extra footer article =
             ]
           , div [ class "media-content" ]
               ( [ div [ class "content" ]
-                  [ viewTweetHeader article
+                  [ viewTweetHeader timeModel article
                   , div [ class "tweet-paragraph" ] [ text article.text ]
                   ]
               ]
@@ -331,9 +357,9 @@ viewTweetSkeleton superHeader extra footer article =
         )
 
 
-viewTweet : Article -> Html Msg
-viewTweet article =
-  viewTweetSkeleton Nothing Nothing Nothing article
+viewTweet : TimeModel -> Article -> Html Msg
+viewTweet timeModel article =
+  viewTweetSkeleton timeModel Nothing Nothing Nothing article
 
 
 -- HTTP

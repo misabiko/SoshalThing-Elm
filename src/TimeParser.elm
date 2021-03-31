@@ -1,6 +1,6 @@
-module TimeParser exposing (tweetTimeDecoder, timeFormat)
+module TimeParser exposing (tweetTimeDecoder, timeFormat, toFullDateFormat, toFullTimeFormat)
 
-import Time exposing (Month(..), toDay, toMonth, toYear)
+import Time exposing (..)
 import Time.Extra as TimeE
 import Parser exposing (..)
 import Json.Decode
@@ -10,12 +10,12 @@ import Set
 -- PARSING
 
 
-tweetTimeDecoder : String -> Json.Decode.Decoder Time.Posix
+tweetTimeDecoder : String -> Json.Decode.Decoder Posix
 tweetTimeDecoder timeString =
   case (run tweetTimeParser timeString) of
     Ok parsed ->
       parsedTimeToParts parsed
-        |> TimeE.partsToPosix Time.utc
+        |> TimeE.partsToPosix utc
         |> Json.Decode.succeed
 
     Err deadEnds ->
@@ -66,7 +66,7 @@ deadEndToString deadEnd =
 
 
 type alias ParsedTweetTime =
-  { month: Time.Month
+  { month: Month
   , day: Int
   , hour: Int
   , minute: Int
@@ -81,7 +81,7 @@ parsedTimeToParts parsed =
 
 
 -- Tue Aug 18 00:00:00 +0000 2020
--- TimeE.Parts 2018 Time.Sep 26 14 30 0 0
+-- TimeE.Parts 2018 Sep 26 14 30 0 0
 tweetTimeParser : Parser ParsedTweetTime
 tweetTimeParser =
   succeed ParsedTweetTime
@@ -113,7 +113,7 @@ paddedInt =
     |= int
 
 
-parseMonth : String -> Parser Time.Month
+parseMonth : String -> Parser Month
 parseMonth str =
   case str of
     "Jan" -> succeed Jan
@@ -134,16 +134,79 @@ parseMonth str =
 -- FORMATTING
 
 
-timeFormat : Time.Posix -> String
-timeFormat time =
-  String.fromInt (toDay Time.utc time)
-  ++ " " ++
-  toAbbrevMonth (toMonth Time.utc time)
-  ++ " " ++
-  String.fromInt (toYear Time.utc time)
+type alias TimeModel =
+  { zone : Time.Zone
+  , lastNow : Time.Posix
+  }
 
 
-toAbbrevMonth : Time.Month -> String
+--timeFormat : TimeModel -> Posix -> String
+--timeFormat timeModel time =
+--  case maybeNow of
+--    Just now -> intervalFormat now time
+--    Nothing -> toFullDateFormat zone time
+
+
+-- TimeE.diff only uses the zone for Day, Month and Weekday
+timeFormat : TimeModel -> Posix -> String
+timeFormat timeModel time =
+  if (TimeE.diff TimeE.Year timeModel.zone time timeModel.lastNow) > 0 then
+    toFullDateFormat timeModel time
+  else if (TimeE.diff TimeE.Month timeModel.zone time timeModel.lastNow) > 0 then
+    toDayMonthFormat timeModel time
+  else
+    let
+      dayDiff = TimeE.diff TimeE.Day timeModel.zone time timeModel.lastNow
+    in
+      if dayDiff > 0 then
+        (String.fromInt dayDiff) ++ "d"
+  else
+    let
+      hourDiff = TimeE.diff TimeE.Hour timeModel.zone time timeModel.lastNow
+    in
+      if hourDiff > 0 then
+        (String.fromInt hourDiff) ++ "h"
+  else
+    let
+      minDiff = TimeE.diff TimeE.Minute timeModel.zone time timeModel.lastNow
+    in
+      if minDiff > 0 then
+        (String.fromInt minDiff) ++ "m"
+  else
+    let
+      secDiff = TimeE.diff TimeE.Second timeModel.zone time timeModel.lastNow
+    in
+      if secDiff > 0 then
+        (String.fromInt secDiff) ++ "s"
+  else
+    "just now"
+
+
+toDayMonthFormat : TimeModel -> Posix -> String
+toDayMonthFormat timeModel time =
+  String.fromInt (toDay timeModel.zone time)
+  ++ " " ++
+  toAbbrevMonth (toMonth timeModel.zone time)
+
+
+toFullDateFormat : TimeModel -> Posix -> String
+toFullDateFormat timeModel time =
+  (toDayMonthFormat timeModel time)
+  ++ " " ++
+  String.fromInt (toYear timeModel.zone time)
+
+
+-- 4:05 PM Mar 30 2021
+toFullTimeFormat : TimeModel -> Posix -> String
+toFullTimeFormat timeModel time =
+  String.fromInt (toHour timeModel.zone time)
+  ++ ":" ++
+  String.fromInt (toMinute timeModel.zone time)
+  ++ " " ++
+  (toFullDateFormat timeModel time)
+
+
+toAbbrevMonth : Month -> String
 toAbbrevMonth month =
   case month of
     Jan -> "Jan"
@@ -158,4 +221,3 @@ toAbbrevMonth month =
     Oct -> "Oct"
     Nov -> "Nov"
     Dec -> "Dec"
-
