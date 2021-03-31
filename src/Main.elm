@@ -334,12 +334,20 @@ viewMaybe maybeElement =
     Nothing ->
       []
 
-viewTweetSkeleton : TimeModel -> Maybe (Html Msg) -> Maybe (Html Msg) -> Maybe (Html Msg) -> Article -> Html Msg
-viewTweetSkeleton timeModel superHeader extra footer article =
+
+type alias TweetSkeletonParts =
+  { superHeader: Maybe (Html Msg)
+  , extra: Maybe (Html Msg)
+  , footer: Maybe (Html Msg)
+  }
+
+
+viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Article -> Html Msg
+viewTweetSkeleton timeModel parts article =
   case article.extension of
     Social social ->
       Html.article [ class "article" ]
-        ((viewMaybe superHeader)
+        ((viewMaybe parts.superHeader)
         ++ [ div [ class "media" ]
           [ figure [ class "media-left" ]
             [ p [ class "image", class "is-64x64" ]
@@ -351,18 +359,18 @@ viewTweetSkeleton timeModel superHeader extra footer article =
                   , div [ class "tweet-paragraph" ] [ text article.text ]
                   ]
               ]
-              ++ (viewMaybe extra)
+              ++ (viewMaybe parts.extra)
               ++ [ viewTweetButtons article ]
               )
           ]
         ]
-        ++ (viewMaybe footer)
+        ++ (viewMaybe parts.footer)
         )
 
 
 viewTweet : TimeModel -> Article -> Html Msg
 viewTweet timeModel article =
-  viewTweetSkeleton timeModel Nothing Nothing Nothing article
+  viewTweetSkeleton timeModel { superHeader = Nothing, extra = Nothing, footer = Nothing } article
 
 
 -- HTTP
