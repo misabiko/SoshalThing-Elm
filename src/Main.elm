@@ -31,7 +31,7 @@ main =
 type alias Service =
   { name: String
   , endpoints: Dict String Endpoint
-  , articles: Dict String Article
+  , articles: ArticleCollection
   }
 
 
@@ -71,6 +71,11 @@ type alias Article =
   , text: String
   , extension : ArticleExtension
   }
+
+
+type alias ArticleCollection =
+  Dict String Article
+
 
 type alias Model =
   { services: Dict String Service
@@ -167,7 +172,7 @@ updateServiceArticles articles service =
   { service | articles = Dict.union (listToDict articles) service.articles }
 
 
-listToDict : List Article -> Dict String Article
+listToDict : List Article -> ArticleCollection
 listToDict articles =
   Dict.fromList
     <| List.map (\article -> (article.id, article)) articles
@@ -177,10 +182,23 @@ updateTimelineArticles : List String -> String -> List Timeline -> List Timeline
 updateTimelineArticles articleIds timelineTitle timelines =
   List.map (\timeline -> 
     if timeline.title == timelineTitle then
-      { timeline | articleIds = timeline.articleIds ++ articleIds }
+      { timeline | articleIds = timelineSortArticles (appendNonMembers timeline.articleIds articleIds) }
     else
       timeline)
     timelines
+
+
+appendNonMembers : List a -> List a -> List a
+appendNonMembers existingValues newValues =
+  existingValues ++ (List.filter (\val -> not (List.member val existingValues)) newValues)
+
+
+timelineSortArticles : List String -> List String
+timelineSortArticles articleIds =
+  articleIds
+    |> List.sortBy (\articleId -> Maybe.withDefault 0 (String.toInt articleId))
+    |> List.reverse
+
 
 -- SUBSCRIPTIONS
 
@@ -188,6 +206,7 @@ updateTimelineArticles articleIds timelineTitle timelines =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
   Sub.none
+
 
 -- VIEW
 
