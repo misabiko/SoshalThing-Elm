@@ -6,9 +6,12 @@ import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Dict exposing (Dict)
 import Http
+import Time
 import Url.Builder as UrlB
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
+
+import TimeParser
 
 
 -- MAIN
@@ -66,7 +69,7 @@ type alias SocialData =
 
 type alias Article =
   { id: String
-  , creationDate: String
+  , creationDate: Time.Posix
   , text: String
   , extension : ArticleExtension
   }
@@ -273,9 +276,8 @@ viewTweetHeader article =
             , small [] [ text ("@" ++ social.authorHandle) ]
             ]
         , span [ class "timestamp" ]
-            [ small [] [ text article.creationDate ] ]
+            [ small [] [ text (TimeParser.timeFormat article.creationDate) ] ]
         ]
-
 viewTweetButtons : Article -> Html Msg
 viewTweetButtons article =
   case article.extension of
@@ -363,12 +365,16 @@ tweetDecoder : Decoder Article
 tweetDecoder =
   Decode.succeed Article
     |> DecodeP.required "id_str" string
-    |> DecodeP.required "created_at" string -- TODO Parse
+    |> DecodeP.custom (Decode.andThen
+      TimeParser.tweetTimeDecoder
+      (field "created_at" string)
+    )
     |> DecodeP.custom (Decode.oneOf
       [ field "text" string
       , field "full_text" string
       ])
     |> DecodeP.custom socialDecoder
+
 
 socialDecoder : Decoder ArticleExtension
 socialDecoder =
