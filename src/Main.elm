@@ -57,15 +57,13 @@ type alias Timeline =
 type ArticleExtension
   = Social SocialData
   | Text String
-  | Share ShareData
-  | Quote String
+  | Share String
 
 
 type alias SocialData =
   { authorName: String
   , authorHandle: String
   , authorAvatar: String
-  --, images: List PostImageData
   , liked: Bool
   , reposted: Bool
   , likeCount: Int
@@ -73,11 +71,9 @@ type alias SocialData =
   }
 
 
-type alias ShareData =
-  { sharedId: String
-  , sharerName: String
-  , sharerHandle: String
-  , sharerAvatar: String
+type alias ShareableArticle =
+  { article: Article
+  , sharedArticle: Maybe Article
   }
 
 
@@ -295,18 +291,40 @@ viewTimeline model timeline =
               , div [ class "timelineButtons" ]
                   [ button [ onClick (Refresh service endpoint timeline) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
               ]
-            , viewContainer model.time (getValues service.articles timeline.articleIds)
+            , viewContainer model.time (getArticles service.articles timeline.articleIds)
             ]
 
 
-getValues : Dict comparable v -> List comparable -> List v
-getValues dict keys =
-  List.filterMap (\id -> Dict.get id dict) keys
+getArticles : ArticleCollection -> List String -> List ShareableArticle
+getArticles articles ids =
+  List.filterMap
+    (\id -> 
+      case (Dict.get id articles) of
+        Just article ->
+          case (getShareData article) of
+            Just sharedId ->
+              case (Dict.get sharedId articles) of
+                Just sharedArticle ->
+                  Just (ShareableArticle article (Just sharedArticle))
+                
+                Nothing ->
+                  Just (ShareableArticle
+                  article
+                  (Debug.log
+                    ("Couldn't find shared article '" ++ sharedId ++ "'")
+                    Nothing))
+
+            Nothing ->
+              Just (ShareableArticle article Nothing)
+
+        Nothing -> Nothing
+    )
+    ids
 
 
-viewContainer : TimeModel -> List Article -> Html Msg
-viewContainer timeModel articles =
-  div [ class "timelineArticles" ] (List.map (viewTweet timeModel) articles)
+viewContainer : TimeModel -> List ShareableArticle -> Html Msg
+viewContainer timeModel shareableArticles =
+  div [ class "timelineArticles" ] (List.map (viewTweet timeModel) shareableArticles)
 
 
 viewTweetHeader : TimeModel -> Article -> SocialData -> Html Msg
@@ -386,6 +404,18 @@ getSocialData article =
     Nothing -> Nothing
 
 
+getShareData : Article -> Maybe String
+getShareData article =
+  case (Dict.get "Share" article.extensions) of
+    Just ext ->
+      case ext of
+        Share data -> Just data
+
+        _ -> Nothing
+    
+    Nothing -> Nothing
+
+
 viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Article -> Html Msg
 viewTweetSkeleton timeModel parts article =
   case ((getTextData article, getSocialData article)) of
@@ -414,10 +444,46 @@ viewTweetSkeleton timeModel parts article =
     _ ->
       Html.article [ class "article" ] [ text "Couldn't find text and social extension" ]
 
-viewTweet : TimeModel -> Article -> Html Msg
-viewTweet timeModel article =
-  viewTweetSkeleton timeModel { superHeader = Nothing, extra = Nothing, footer = Nothing } article
+viewTweet : TimeModel -> ShareableArticle -> Html Msg
+viewTweet timeModel shareableArticle =
+  let
+    actualTweet =
+      Maybe.withDefault shareableArticle.article shareableArticle.sharedArticle
+    parts =
+      { superHeader = getTweetSuperHeader shareableArticle
+      , extra = Nothing
+      , footer = Nothing
+      }
+  in
+    viewTweetSkeleton timeModel parts actualTweet
 
+
+getRetweetSuperHeader : Article -> Html Msg
+getRetweetSuperHeader article =
+  case (getSocialData article) of
+    Just social ->
+      div [ class "repostLabel" ]
+        [ a [ href ("https://twitter.com/" ++ social.authorHandle)
+            , target "_blank"
+            , rel "noopener noreferrer"
+            ]
+            [ text (social.authorName ++ " retweeted") ]
+        ]
+    
+    Nothing ->
+      div [ class "repostLabel" ] []
+
+
+getTweetSuperHeader : ShareableArticle -> Maybe (Html Msg)
+getTweetSuperHeader shareableArticle =
+  case shareableArticle.sharedArticle of
+    Just _ ->
+      case (getTextData shareableArticle.article) of
+        Just quoteText ->
+          Nothing
+        Nothing ->
+          Just (getRetweetSuperHeader shareableArticle.article)
+    Nothing -> Nothing
 
 -- HTTP
 
@@ -506,14 +572,10 @@ extensionsDecoder =
     (Decode.map maybeListCollapse (
       (Decode.succeed List.append
         |> DecodeP.custom
-          (Decode.succeed List.append
-            |> DecodeP.custom
-                (Decode.succeed List.append
-                  |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
-                  |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
-                )
-            |> DecodeP.custom (extensionDecoder "Quote" quoteDecoder)
-          )
+            (Decode.succeed List.append
+              |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
+              |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
+            )
         |> DecodeP.custom (extensionDecoder "Text" textDecoder)
       )
     ))
@@ -544,31 +606,31 @@ socialDecoder =
 
 shareDecoder : Decoder ArticleExtension
 shareDecoder =
-  Decode.succeed ShareData
-    |> DecodeP.requiredAt ["retweeted_status", "id_str"] string
-    |> DecodeP.requiredAt ["user", "name"] string
-    |> DecodeP.requiredAt ["user", "screen_name"] string
-    |> DecodeP.requiredAt ["user", "profile_image_url_https"] string
+  Decode.oneOf
+    [ Decode.at ["retweeted_status", "id_str"] Decode.string
+    , Decode.at ["quoted_status", "id_str"] Decode.string
+    ]
     |> Decode.map Share
-
-
-quoteDecoder : Decoder ArticleExtension
-quoteDecoder =
-  Decode.succeed identity
-    |> DecodeP.requiredAt ["quoted_status", "id_str"] string
-    |> Decode.map Quote
 
 
 textDecoder : Decoder ArticleExtension
 textDecoder =
-  Decode.succeed identity
-    |> DecodeP.custom (
-      Decode.oneOf
-        [ field "text" string
-        , field "full_text" string
-        ]
+  Decode.andThen
+    (\maybeShare ->
+      case maybeShare of
+        Just _ -> Decode.fail ""
+        Nothing ->
+          (Decode.succeed identity
+            |> DecodeP.custom (
+              Decode.oneOf
+                [ field "text" string
+                , field "full_text" string
+                ]
+            )
+            |> Decode.map Text
+          )
     )
-    |> Decode.map Text
+    (Decode.maybe (Decode.at ["retweeted_status", "id_str"] Decode.string))
 
 
 payloadErrorsDecoder : Decoder (List (String, Int))
