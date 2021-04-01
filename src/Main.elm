@@ -88,6 +88,12 @@ type alias ArticleCollection =
   Dict String Article
 
 
+type TweetType
+  = Tweet
+  | Retweet
+  | Quote
+
+
 type alias TimeModel =
   { zone : Time.Zone
   , lastNow : Time.Posix
@@ -442,16 +448,38 @@ viewTweetSkeleton timeModel parts article =
         )
 
     _ ->
-      Html.article [ class "article" ] [ text "Couldn't find text and social extension" ]
+      Html.article [ class "article" ]
+        [ text ("Couldn't find text and social extension for " ++ article.id) ]
+
+
+getTweetType : ShareableArticle -> TweetType
+getTweetType shareableArticle =
+  case shareableArticle.sharedArticle of
+    Just shared ->
+      case (getTextData shareableArticle.article) of
+        Just _ -> Quote
+        Nothing -> Retweet
+    Nothing -> Tweet
+
+
+getActualTweet : ShareableArticle -> Article
+getActualTweet shareableArticle =
+  case shareableArticle.sharedArticle of
+    Just shared ->
+      case (getTweetType shareableArticle) of
+        Tweet -> shareableArticle.article
+        Retweet -> shared
+        Quote -> shareableArticle.article
+    Nothing -> shareableArticle.article
+
 
 viewTweet : TimeModel -> ShareableArticle -> Html Msg
 viewTweet timeModel shareableArticle =
   let
-    actualTweet =
-      Maybe.withDefault shareableArticle.article shareableArticle.sharedArticle
+    actualTweet = getActualTweet shareableArticle
     parts =
       { superHeader = getTweetSuperHeader shareableArticle
-      , extra = Nothing
+      , extra = getTweetExtra timeModel shareableArticle
       , footer = Nothing
       }
   in
@@ -484,6 +512,32 @@ getTweetSuperHeader shareableArticle =
         Nothing ->
           Just (getRetweetSuperHeader shareableArticle.article)
     Nothing -> Nothing
+
+
+getQuoteExtra : TimeModel -> Article -> Html Msg
+getQuoteExtra timeModel article =
+  case ((getSocialData article, getTextData article)) of
+    (Just social, Just quoteText) ->
+      div [ class "quotedPost" ]
+        [ viewTweetHeader timeModel article social
+        , div [ class "tweet-paragraph" ] [ text quoteText ]
+        -- media
+        ]
+
+    _ -> div [] []
+
+
+getTweetExtra : TimeModel -> ShareableArticle -> Maybe (Html Msg)
+getTweetExtra timeModel shareableArticle =
+  case shareableArticle.sharedArticle of
+    Just shared ->
+      case (getTextData shareableArticle.article) of
+        Just quoteText ->
+          Just (getQuoteExtra timeModel shared)
+        Nothing ->
+          Nothing
+    Nothing -> Nothing
+
 
 -- HTTP
 
