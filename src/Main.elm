@@ -583,7 +583,7 @@ getTweetFooter shareableArticle =
 
 type alias DecodedTweet =
   { tweet: Article
-  , quotedTweet: Maybe Article
+  , sharedTweet: Maybe Article
   }
 
 
@@ -616,7 +616,7 @@ unpackDecodedTweets decodedTweets =
 
 unpackDecodedTweet : DecodedTweet -> (List Article, String)
 unpackDecodedTweet decodedTweet =
-  ( case decodedTweet.quotedTweet of
+  ( case decodedTweet.sharedTweet of
           Just tweet ->
             [decodedTweet.tweet, tweet]
           Nothing ->
@@ -627,25 +627,52 @@ unpackDecodedTweet decodedTweet =
 
 payloadDecoder : Decoder EndpointPayload
 payloadDecoder =
-  Decode.andThen (\maybeStatuses ->
-    case maybeStatuses of
-      Just statuses ->
-        Decode.succeed statuses
-      _ ->
-        (Decode.map unpackDecodedTweets (Decode.list tweetDecoder)))
-    (maybe (field "statuses" (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))))
+  Decode.oneOf
+    [ field "statuses" (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))
+    , (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))
+    ]
 
 
 tweetDecoder : Decoder DecodedTweet
 tweetDecoder =
-  Decode.map2 DecodedTweet
-    topTweetDecoder
-    (Decode.maybe
-      (Decode.oneOf
-        [ field "quoted_status" topTweetDecoder
-        , field "retweeted_status" topTweetDecoder
-        ]
-      ))
+  Decode.andThen (\decodedTweet ->
+      Decode.succeed { decodedTweet
+        | tweet = fixTweetText decodedTweet.tweet
+        , sharedTweet = Maybe.map fixTweetText decodedTweet.sharedTweet
+      }
+    )
+    (Decode.map2 DecodedTweet
+      topTweetDecoder
+      (Decode.maybe
+        (Decode.oneOf
+          [ field "quoted_status" topTweetDecoder
+          , field "retweeted_status" topTweetDecoder
+          ]
+        )))
+
+
+fixTweetText : Article -> Article
+fixTweetText article =
+  case (getImageData article) of
+    Just images ->
+      {article | extensions =
+        Dict.update "Text" (Maybe.map
+          (\text ->
+            case text of
+              Text textStr ->
+                (
+                  List.foldl (\image foldedText ->
+                    String.replace image.compressedUrl "" foldedText
+                  ) textStr images
+                )
+                |> String.trimRight
+                |> Text
+
+              _ -> text
+          )
+        ) article.extensions
+      }
+    Nothing -> article
 
 
 topTweetDecoder : Decoder Article
