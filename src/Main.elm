@@ -164,26 +164,54 @@ initTwitter =
 -- UPDATE
 
 
-type alias Payload =
+type alias EndpointPayloadResult =
   Result (List (String, Int)) EndpointPayload
 
 
 type Msg
-  = GotPayload Service Timeline (Result Http.Error Payload)
+  = GotEndpointPayload Service Timeline (Result Http.Error EndpointPayloadResult)
+  | GotServicePayload Service (Result Http.Error EndpointPayloadResult)
   | Refresh Service Endpoint Timeline
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
+  | Like Service Article
+  | Repost Service Article
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
   case msg of
-    GotPayload service timeline result ->
+    GotEndpointPayload service timeline result ->
       case result of
         Ok payloadResult ->
           case payloadResult of
             Ok endpointPayload ->
-              updateArticles service timeline endpointPayload model
+              ( { model
+                  | services = Dict.insert service.name (updateServiceArticles endpointPayload.articles service) model.services
+                  , timelines = updateTimelineArticles endpointPayload.timelineArticles timeline.title model.timelines
+                }
+              , Task.perform NewTime Time.now
+              )
+
+            Err errors ->
+              let
+                _ = List.map (Debug.log "Payload Error") errors
+              in
+                ( model, Cmd.none )
+        Err reason ->
+          let
+            _ = Debug.log "Error" reason
+          in
+            (model, Cmd.none)
+
+    GotServicePayload service result ->
+      case result of
+        Ok payloadResult ->
+          case payloadResult of
+            Ok endpointPayload ->
+              ( { model | services = Dict.insert service.name (updateServiceArticles endpointPayload.articles service) model.services }
+              , Task.perform NewTime Time.now
+              )
 
             Err errors ->
               let
@@ -208,7 +236,12 @@ update msg model =
       ( { model | time = (\t -> { t | lastNow = now }) model.time }
       , Cmd.none
       )
-
+    
+    Like service article ->
+      (model, postLike service article)
+    
+    Repost service article ->
+      (model, postRetweet service article)
 
 updateArticles : Service -> Timeline -> EndpointPayload -> Model -> ( Model, Cmd Msg )
 updateArticles service timeline payload model =
@@ -304,7 +337,7 @@ viewTimeline model timeline =
               , div [ class "timelineButtons" ]
                   [ button [ onClick (Refresh service endpoint timeline) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
               ]
-            , viewContainer model.time (getArticles service.articles timeline.articleIds)
+            , viewContainer model.time service (getArticles service.articles timeline.articleIds)
             ]
 
 
@@ -335,9 +368,9 @@ getArticles articles ids =
     ids
 
 
-viewContainer : TimeModel -> List ShareableArticle -> Html Msg
-viewContainer timeModel shareableArticles =
-  div [ class "timelineArticles" ] (List.map (viewTweet timeModel) shareableArticles)
+viewContainer : TimeModel -> Service -> List ShareableArticle -> Html Msg
+viewContainer timeModel service shareableArticles =
+  div [ class "timelineArticles" ] (List.map (viewTweet timeModel service) shareableArticles)
 
 
 viewTweetHeader : TimeModel -> Article -> SocialData -> Html Msg
@@ -359,17 +392,27 @@ viewTweetHeader timeModel article social =
     ]
 
 
-viewTweetButtons : Article -> SocialData -> Html Msg
-viewTweetButtons article social =
+viewTweetButtons : Service -> Article -> SocialData -> Html Msg
+viewTweetButtons service article social =
   nav [ class "level", class "is-mobile" ]
     [ div [ class "level-left" ]
-        [ a [ class "level-item", class "articleButton", class "repostButton" ]
+        [ a [ class "level-item"
+            , class "articleButton"
+            , class "repostButton"
+            , classList [("repostedPostButton", social.reposted)]
+            , onClick (Repost service article)
+            ]
             [ viewIcon "fa-retweet" "fas" ""
             , span [] [ text (String.fromInt social.repostCount) ]
             ]
-        , a [ class "level-item", class "articleButton", class "likeButton" ]
+        , a [ class "level-item"
+            , class "articleButton"
+            , class "likeButton"
+            , classList [("likedPostButton", social.liked)]
+            , onClick (Like service article)
+            ]
             [ viewIcon "fa-heart" (if social.liked then "fas" else "far") ""
-            , span [] [ text (String.fromInt social.likeCount) ]
+            , span [ ] [ text (String.fromInt social.likeCount) ]
             ]
         , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
             [ viewIcon "fa-ellipsis-h" "fas" "" ]
@@ -441,8 +484,8 @@ getImageData article =
     Nothing -> Nothing
 
 
-viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Article -> Html Msg
-viewTweetSkeleton timeModel parts article =
+viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Service -> Article -> Html Msg
+viewTweetSkeleton timeModel parts service article =
   case ((getTextData article, getSocialData article)) of
     (Just textStr, Just social) ->
       Html.article [ class "article" ]
@@ -459,7 +502,7 @@ viewTweetSkeleton timeModel parts article =
                   ]
               ]
               ++ (viewMaybe parts.extra)
-              ++ [viewTweetButtons article social]
+              ++ [viewTweetButtons service article social]
               )
           ]
         ]
@@ -492,8 +535,8 @@ getActualTweet shareableArticle =
     Nothing -> shareableArticle.article
 
 
-viewTweet : TimeModel -> ShareableArticle -> Html Msg
-viewTweet timeModel shareableArticle =
+viewTweet : TimeModel -> Service -> ShareableArticle -> Html Msg
+viewTweet timeModel service shareableArticle =
   let
     actualTweet = getActualTweet shareableArticle
     parts =
@@ -502,7 +545,7 @@ viewTweet timeModel shareableArticle =
       , footer = getTweetFooter shareableArticle
       }
   in
-    viewTweetSkeleton timeModel parts actualTweet
+    viewTweetSkeleton timeModel parts service actualTweet
 
 
 getRetweetSuperHeader : Article -> Html Msg
@@ -593,11 +636,40 @@ type alias EndpointPayload =
   }
 
 
+postLike : Service -> Article -> Cmd Msg
+postLike service article =
+  case (getSocialData article) of
+    Just social ->
+      Http.post
+        { url = "http://127.0.0.1:5000/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
+        , body = Http.emptyBody
+        , expect = Http.expectJson (GotServicePayload service) payloadResponseDecoder
+        }
+
+    Nothing -> Cmd.none
+
+
+postRetweet : Service -> Article -> Cmd Msg
+postRetweet service article =
+  case (getSocialData article) of
+    Just social ->
+      if social.reposted then
+        Cmd.none
+      else
+        Http.post
+          { url = "http://127.0.0.1:5000/retweet/" ++ article.id
+          , body = Http.emptyBody
+          , expect = Http.expectJson (GotServicePayload service) payloadResponseDecoder
+          }
+
+    Nothing -> Cmd.none
+
+
 getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
   Http.get
     { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (dictToQueries timeline.options)
-    , expect = Http.expectJson (GotPayload service timeline) payloadResponseDecoder
+    , expect = Http.expectJson (GotEndpointPayload service timeline) payloadResponseDecoder
     }
 
 
@@ -630,6 +702,7 @@ payloadDecoder =
   Decode.oneOf
     [ field "statuses" (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))
     , (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))
+    , (Decode.map unpackDecodedTweets (Decode.map List.singleton tweetDecoder))
     ]
 
 
@@ -784,7 +857,7 @@ payloadErrorsDecoder =
       (field "code" int)
 
 
-payloadResponseDecoder : Decoder Payload
+payloadResponseDecoder : Decoder EndpointPayloadResult
 payloadResponseDecoder =
   Decode.andThen (\maybeErrors ->
         case maybeErrors of
