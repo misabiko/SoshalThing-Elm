@@ -124,7 +124,7 @@ init _ =
     }
   , Cmd.batch
       [ Task.perform AdjustTimeZone Time.here
-      , Task.perform Tick Time.now
+      , Task.perform NewTime Time.now
       ]
   )
 
@@ -165,7 +165,7 @@ type Msg
   = GotPayload Service Timeline (Result Http.Error Payload)
   | Refresh Service Endpoint Timeline
   | AdjustTimeZone Time.Zone
-  | Tick Time.Posix
+  | NewTime Time.Posix
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -197,7 +197,7 @@ update msg model =
       , Cmd.none
       )
 
-    Tick now ->
+    NewTime now ->
       ( { model | time = (\t -> { t | lastNow = now }) model.time }
       , Cmd.none
       )
@@ -208,7 +208,7 @@ updateArticles service timeline payload model =
   ( { model | services = Dict.insert service.name (updateServiceArticles payload.articles service) model.services
             , timelines = updateTimelineArticles payload.timelineArticles timeline.title model.timelines
     }
-  , Cmd.none
+  , Task.perform NewTime Time.now
   )
 
 
