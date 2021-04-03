@@ -1,4 +1,4 @@
-module TimeParser exposing (tweetTimeDecoder, timeFormat, toFullDateFormat, toFullTimeFormat)
+module TimeParser exposing (tweetTimeDecoder, relativeTimeFormat, toFullDateFormat, toFullTimeFormat)
 
 import Time exposing (..)
 import Time.Extra as TimeE
@@ -140,16 +140,9 @@ type alias TimeModel =
   }
 
 
---timeFormat : TimeModel -> Posix -> String
---timeFormat timeModel time =
---  case maybeNow of
---    Just now -> intervalFormat now time
---    Nothing -> toFullDateFormat zone time
-
-
 -- TimeE.diff only uses the zone for Day, Month and Weekday
-timeFormat : TimeModel -> Posix -> String
-timeFormat timeModel time =
+relativeTimeFormat : TimeModel -> Posix -> String
+relativeTimeFormat timeModel time =
   if (TimeE.diff TimeE.Year timeModel.zone time timeModel.lastNow) > 0 then
     toFullDateFormat timeModel time
   else if (TimeE.diff TimeE.Month timeModel.zone time timeModel.lastNow) > 0 then

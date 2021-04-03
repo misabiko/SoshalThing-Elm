@@ -347,7 +347,7 @@ viewTweetHeader timeModel article social =
     , span [ class "timestamp" ]
         [ small
           [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
-          [ text (TimeParser.timeFormat timeModel article.creationDate) ]
+          [ text (TimeParser.relativeTimeFormat timeModel article.creationDate) ]
         ]
     ]
 
