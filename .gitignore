@@ -2,3 +2,6 @@
 
 dist/
 elm-stuff/
+
+credentials.json
+node_modules/

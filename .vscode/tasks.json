@@ -23,6 +23,15 @@
             "problemMatcher": [
                 "$node-sass"
             ]
+        },
+        {
+            "type": "npm",
+            "script": "server",
+            "label": "server",
+            "detail": "node src/server/index.js",
+            "problemMatcher": [
+                "$eslint-compact"
+            ]
         }
     ]
 }

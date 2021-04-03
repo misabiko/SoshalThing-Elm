@@ -1,0 +1,14 @@
+{
+  "name": "soshalthing",
+  "version": "0.1.0",
+  "description": "",
+  "scripts": {
+    "server": "node src/server/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "misabiko",
+  "license": "ISC",
+  "dependencies": {
+    "twitter-v2": "^1.0.8"
+  }
+}
