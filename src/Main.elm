@@ -12,9 +12,9 @@ import Time
 import Task
 import Url.Builder as UrlB
 
-import Article exposing (..)
+import Article exposing (Article, ShareableArticle)
 import TimeParser
-import Tweet exposing (payloadResponseDecoder, getShareableArticles)
+import Tweet
 
 
 -- MAIN
@@ -36,7 +36,7 @@ main =
 type alias Service =
   { name: String
   , endpoints: Dict String Endpoint
-  , articles: ArticleCollection
+  , articles: Article.Collection
   }
 
 
@@ -54,12 +54,6 @@ type alias Timeline =
   , articleIds: List String
   , options: Dict String String
   }
-
-
-type TweetType
-  = Tweet
-  | Retweet
-  | Quote
 
 
 type alias TimeModel =
@@ -218,7 +212,7 @@ updateServiceArticles articles service =
   { service | articles = Dict.union (listToDict articles) service.articles }
 
 
-listToDict : List Article -> ArticleCollection
+listToDict : List Article -> Article.Collection
 listToDict articles =
   Dict.fromList
     <| List.map (\article -> (article.id, article)) articles
@@ -303,235 +297,13 @@ viewTimeline model timeline =
               , div [ class "timelineButtons" ]
                   [ button [ onClick (Refresh service endpoint timeline) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
               ]
-            , viewContainer model.time service (getShareableArticles service.articles timeline.articleIds)
+            , viewContainer model.time service (Article.getShareableArticles service.articles timeline.articleIds)
             ]
 
 
 viewContainer : TimeModel -> Service -> List ShareableArticle -> Html Msg
 viewContainer timeModel service shareableArticles =
-  Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (viewKeyedTweet timeModel service) shareableArticles)
-
-
-viewKeyedTweet : TimeModel -> Service -> ShareableArticle -> (String, Html Msg)
-viewKeyedTweet timeModel service shareableArticle =
-  (getShareableId shareableArticle, lazy3 viewTweet timeModel service shareableArticle)
-
-
-getShareableId : ShareableArticle -> String
-getShareableId shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just shared -> shareableArticle.article.id ++ shared.id
-    Nothing -> shareableArticle.article.id
-
-
-viewTweetHeader : TimeModel -> Article -> SocialData -> Html Msg
-viewTweetHeader timeModel article social =
-  div [ class "articleHeader" ]
-    [ a [ class "names"
-        , href ("https://twitter.com/" ++ social.authorHandle)
-        , target "_blank"
-        , rel "noopener noreferrer"
-        ]
-        [ strong [] [ text social.authorName ]
-        , small [] [ text ("@" ++ social.authorHandle) ]
-        ]
-    , span [ class "timestamp" ]
-        [ small
-          [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
-          [ text (TimeParser.relativeTimeFormat timeModel article.creationDate) ]
-        ]
-    ]
-
-
-viewTweetButtons : Service -> Article -> SocialData -> Html Msg
-viewTweetButtons service article social =
-  nav [ class "level", class "is-mobile" ]
-    [ div [ class "level-left" ]
-        [ a [ class "level-item"
-            , class "articleButton"
-            , class "repostButton"
-            , classList [("repostedPostButton", social.reposted)]
-            , onClick (Repost service article)
-            ]
-            ([ viewIcon "fa-retweet" "fas" "" ]
-            ++ (viewMaybe (
-              if social.repostCount > 0 then
-                Just (span [] [ text (String.fromInt social.repostCount) ])
-              else
-                Nothing
-            )))
-
-        , a [ class "level-item"
-            , class "articleButton"
-            , class "likeButton"
-            , classList [("likedPostButton", social.liked)]
-            , onClick (Like service article)
-            ]
-            ([ viewIcon "fa-heart" (if social.liked then "fas" else "far") "" ]
-            ++ (viewMaybe (
-              if social.likeCount > 0 then
-                Just (span [ ] [ text (String.fromInt social.likeCount) ])
-              else
-                Nothing
-            )))
-
-        , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
-            [ viewIcon "fa-ellipsis-h" "fas" "" ]
-        ]
-    ]
-
-
-viewMaybe : Maybe (Html Msg) -> List (Html Msg)
-viewMaybe maybeElement =
-  case maybeElement of
-    Just element ->
-      [element]
-    Nothing ->
-      []
-
-
-type alias TweetSkeletonParts =
-  { superHeader: Maybe (Html Msg)
-  , extra: Maybe (Html Msg)
-  , footer: Maybe (Html Msg)
-  }
-
-
-viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Service -> Article -> Html Msg
-viewTweetSkeleton timeModel parts service article =
-  case ((article.text, article.social)) of
-    (Just textStr, Just social) ->
-      Html.article [ class "article" ]
-        ((viewMaybe parts.superHeader)
-        ++ [ div [ class "media" ]
-          [ figure [ class "media-left" ]
-            [ p [ class "image", class "is-64x64" ]
-              [ img [ alt (social.authorHandle ++ "'s avatar"), src social.authorAvatar ] [] ]
-            ]
-          , div [ class "media-content" ]
-              ( [ div [ class "content" ]
-                  [ (viewTweetHeader timeModel article social)
-                  , div [ class "tweet-paragraph" ] [ text textStr ]
-                  ]
-              ]
-              ++ (viewMaybe parts.extra)
-              ++ [viewTweetButtons service article social]
-              )
-          ]
-        ]
-        ++ (viewMaybe parts.footer)
-        )
-
-    _ ->
-      Html.article [ class "article" ]
-        [ text ("Couldn't find text and social extension for " ++ article.id) ]
-
-
-getTweetType : ShareableArticle -> TweetType
-getTweetType shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just shared ->
-      case shareableArticle.article.text of
-        Just _ -> Quote
-        Nothing -> Retweet
-    Nothing -> Tweet
-
-
-getActualTweet : ShareableArticle -> Article
-getActualTweet shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just shared ->
-      case (getTweetType shareableArticle) of
-        Tweet -> shareableArticle.article
-        Retweet -> shared
-        Quote -> shareableArticle.article
-    Nothing -> shareableArticle.article
-
-
-viewTweet : TimeModel -> Service -> ShareableArticle -> Html Msg
-viewTweet timeModel service shareableArticle =
-  let
-    actualTweet = getActualTweet shareableArticle
-    parts =
-      { superHeader = getTweetSuperHeader shareableArticle
-      , extra = getTweetExtra timeModel shareableArticle
-      , footer = getTweetFooter shareableArticle
-      }
-  in
-    viewTweetSkeleton timeModel parts service actualTweet
-
-
-getRetweetSuperHeader : Article -> Html Msg
-getRetweetSuperHeader article =
-  case article.social of
-    Just social ->
-      div [ class "repostLabel" ]
-        [ a [ href ("https://twitter.com/" ++ social.authorHandle)
-            , target "_blank"
-            , rel "noopener noreferrer"
-            ]
-            [ text (social.authorName ++ " retweeted") ]
-        ]
-    
-    Nothing ->
-      div [ class "repostLabel" ] []
-
-
-getTweetSuperHeader : ShareableArticle -> Maybe (Html Msg)
-getTweetSuperHeader shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just _ ->
-      case shareableArticle.article.text of
-        Just quoteText ->
-          Nothing
-        Nothing ->
-          Just (getRetweetSuperHeader shareableArticle.article)
-    Nothing -> Nothing
-
-
-getQuoteExtra : TimeModel -> Article -> Html Msg
-getQuoteExtra timeModel article =
-  case ((article.social, article.text)) of
-    (Just social, Just quoteText) ->
-      div [ class "quotedPost" ]
-        [ viewTweetHeader timeModel article social
-        , div [ class "tweet-paragraph" ] [ text quoteText ]
-        -- media
-        ]
-
-    _ -> div [] []
-
-
-getTweetExtra : TimeModel -> ShareableArticle -> Maybe (Html Msg)
-getTweetExtra timeModel shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just shared ->
-      case shareableArticle.article.text of
-        Just quoteText ->
-          Just (getQuoteExtra timeModel shared)
-        Nothing ->
-          Nothing
-    Nothing -> Nothing
-
-
-getMediaFooter : List ImageData -> Html Msg
-getMediaFooter images =
-  div [ class "postImages", class "postMedia" ]
-    (List.map (\imageData ->
-      div [ class "mediaHolder" ]
-        [ div [ class "is-hidden", class "imgPlaceholder" ] []
-        , img [ src imageData.url ] []
-        ]
-    ) images)
-
-
-getTweetFooter : ShareableArticle -> Maybe (Html Msg)
-getTweetFooter shareableArticle =
-  case (getActualTweet shareableArticle).images of
-    Just images ->
-      Just (getMediaFooter images)
-
-    Nothing -> Nothing
+  Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (Tweet.viewKeyedTweet Like Repost timeModel service) shareableArticles)
 
 
 -- HTTP
@@ -550,7 +322,7 @@ postLike service article =
       Http.post
         { url = "http://127.0.0.1:5000/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
         , body = Http.emptyBody
-        , expect = Http.expectJson (GotServicePayload service) payloadResponseDecoder
+        , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
         }
 
     Nothing -> Cmd.none
@@ -566,7 +338,7 @@ postRetweet service article =
         Http.post
           { url = "http://127.0.0.1:5000/retweet/" ++ article.id
           , body = Http.emptyBody
-          , expect = Http.expectJson (GotServicePayload service) payloadResponseDecoder
+          , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
           }
 
     Nothing -> Cmd.none
@@ -576,7 +348,7 @@ getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
   Http.get
     { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (dictToQueries timeline.options)
-    , expect = Http.expectJson (GotEndpointPayload service timeline) payloadResponseDecoder
+    , expect = Http.expectJson (GotEndpointPayload service timeline) Tweet.payloadResponseDecoder
     }
 
 
