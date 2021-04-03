@@ -14,6 +14,7 @@ import Url.Builder as UrlB
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
 
+import Article exposing (..)
 import TimeParser
 
 
@@ -54,47 +55,6 @@ type alias Timeline =
   , articleIds: List String
   , options: Dict String String
   }
-
-
-type ArticleExtension
-  = Social SocialData
-  | Text String
-  | Share String
-  | Images (List ImageData)
-
-
-type alias SocialData =
-  { authorName: String
-  , authorHandle: String
-  , authorAvatar: String
-  , liked: Bool
-  , reposted: Bool
-  , likeCount: Int
-  , repostCount: Int
-  }
-
-
-type alias ImageData =
-  { url: String
-  , compressedUrl: String
-  }
-
-
-type alias ShareableArticle =
-  { article: Article
-  , sharedArticle: Maybe Article
-  }
-
-
-type alias Article =
-  { id: String
-  , creationDate: Time.Posix
-  , extensions : Dict String ArticleExtension
-  }
-
-
-type alias ArticleCollection =
-  Dict String Article
 
 
 type TweetType
@@ -354,7 +314,7 @@ getArticles articles ids =
     (\id -> 
       case (Dict.get id articles) of
         Just article ->
-          case (getShareData article) of
+          case article.share of
             Just sharedId ->
               case (Dict.get sharedId articles) of
                 Just sharedArticle ->
@@ -465,57 +425,9 @@ type alias TweetSkeletonParts =
   }
 
 
-getTextData : Article -> Maybe String
-getTextData article =
-  case (Dict.get "Text" article.extensions) of
-    Just ext ->
-      case ext of
-        Text text -> Just text
-
-        _ -> Nothing
-    
-    Nothing -> Nothing
-
-
-getSocialData : Article -> Maybe SocialData
-getSocialData article =
-  case (Dict.get "Social" article.extensions) of
-    Just ext ->
-      case ext of
-        Social data -> Just data
-
-        _ -> Nothing
-    
-    Nothing -> Nothing
-
-
-getShareData : Article -> Maybe String
-getShareData article =
-  case (Dict.get "Share" article.extensions) of
-    Just ext ->
-      case ext of
-        Share data -> Just data
-
-        _ -> Nothing
-    
-    Nothing -> Nothing
-
-
-getImageData : Article -> Maybe (List ImageData)
-getImageData article =
-  case (Dict.get "Images" article.extensions) of
-    Just ext ->
-      case ext of
-        Images data -> Just data
-
-        _ -> Nothing
-    
-    Nothing -> Nothing
-
-
 viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Service -> Article -> Html Msg
 viewTweetSkeleton timeModel parts service article =
-  case ((getTextData article, getSocialData article)) of
+  case ((article.text, article.social)) of
     (Just textStr, Just social) ->
       Html.article [ class "article" ]
         ((viewMaybe parts.superHeader)
@@ -547,7 +459,7 @@ getTweetType : ShareableArticle -> TweetType
 getTweetType shareableArticle =
   case shareableArticle.sharedArticle of
     Just shared ->
-      case (getTextData shareableArticle.article) of
+      case shareableArticle.article.text of
         Just _ -> Quote
         Nothing -> Retweet
     Nothing -> Tweet
@@ -579,7 +491,7 @@ viewTweet timeModel service shareableArticle =
 
 getRetweetSuperHeader : Article -> Html Msg
 getRetweetSuperHeader article =
-  case (getSocialData article) of
+  case article.social of
     Just social ->
       div [ class "repostLabel" ]
         [ a [ href ("https://twitter.com/" ++ social.authorHandle)
@@ -597,7 +509,7 @@ getTweetSuperHeader : ShareableArticle -> Maybe (Html Msg)
 getTweetSuperHeader shareableArticle =
   case shareableArticle.sharedArticle of
     Just _ ->
-      case (getTextData shareableArticle.article) of
+      case shareableArticle.article.text of
         Just quoteText ->
           Nothing
         Nothing ->
@@ -607,7 +519,7 @@ getTweetSuperHeader shareableArticle =
 
 getQuoteExtra : TimeModel -> Article -> Html Msg
 getQuoteExtra timeModel article =
-  case ((getSocialData article, getTextData article)) of
+  case ((article.social, article.text)) of
     (Just social, Just quoteText) ->
       div [ class "quotedPost" ]
         [ viewTweetHeader timeModel article social
@@ -622,7 +534,7 @@ getTweetExtra : TimeModel -> ShareableArticle -> Maybe (Html Msg)
 getTweetExtra timeModel shareableArticle =
   case shareableArticle.sharedArticle of
     Just shared ->
-      case (getTextData shareableArticle.article) of
+      case shareableArticle.article.text of
         Just quoteText ->
           Just (getQuoteExtra timeModel shared)
         Nothing ->
@@ -643,7 +555,7 @@ getMediaFooter images =
 
 getTweetFooter : ShareableArticle -> Maybe (Html Msg)
 getTweetFooter shareableArticle =
-  case (getImageData (getActualTweet shareableArticle)) of
+  case (getActualTweet shareableArticle).images of
     Just images ->
       Just (getMediaFooter images)
 
@@ -667,7 +579,7 @@ type alias EndpointPayload =
 
 postLike : Service -> Article -> Cmd Msg
 postLike service article =
-  case (getSocialData article) of
+  case article.social of
     Just social ->
       Http.post
         { url = "http://127.0.0.1:5000/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
@@ -680,7 +592,7 @@ postLike service article =
 
 postRetweet : Service -> Article -> Cmd Msg
 postRetweet service article =
-  case (getSocialData article) of
+  case article.social of
     Just social ->
       if social.reposted then
         Cmd.none
@@ -755,26 +667,17 @@ tweetDecoder =
 
 fixTweetText : Article -> Article
 fixTweetText article =
-  case (getImageData article) of
-    Just images ->
-      {article | extensions =
-        Dict.update "Text" (Maybe.map
-          (\text ->
-            case text of
-              Text textStr ->
-                (
-                  List.foldl (\image foldedText ->
-                    String.replace image.compressedUrl "" foldedText
-                  ) textStr images
-                )
-                |> String.trimRight
-                |> Text
-
-              _ -> text
-          )
-        ) article.extensions
+  case (article.text, article.images) of
+    (Just textStr, Just images) ->
+      {article | text =
+        List.foldl (\image foldedText ->
+          String.replace image.compressedUrl "" foldedText
+        ) textStr images
+        |> String.trimRight
+        |> Just
       }
-    Nothing -> article
+
+    _ -> article
 
 
 topTweetDecoder : Decoder Article
@@ -785,31 +688,10 @@ topTweetDecoder =
       TimeParser.tweetTimeDecoder
       (field "created_at" string)
     )
-    |> DecodeP.custom extensionsDecoder
-
-
-extensionsDecoder : Decoder (Dict String ArticleExtension)
-extensionsDecoder =
-  Decode.map Dict.fromList
-    (Decode.map maybeListCollapse (
-      (Decode.succeed List.append
-        |> DecodeP.custom
-            (Decode.succeed List.append
-              |> DecodeP.custom
-                  (Decode.succeed List.append
-                    |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
-                    |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
-                  )
-              |> DecodeP.custom (extensionDecoder "Text" textDecoder)
-            )
-        |> DecodeP.custom (extensionDecoder "Images" imagesDecoder)
-      )
-    ))
-
-
-extensionDecoder : String -> Decoder ArticleExtension -> Decoder (List (Maybe (String, ArticleExtension)))
-extensionDecoder key decoder =
-  Decode.map List.singleton (Decode.maybe (Decode.map2 Tuple.pair (Decode.succeed key) decoder))
+    |> DecodeP.custom (Decode.maybe textDecoder)
+    |> DecodeP.custom (Decode.maybe socialDecoder)
+    |> DecodeP.custom (Decode.maybe shareDecoder)
+    |> DecodeP.custom (Decode.maybe imagesDecoder)
 
 
 maybeListCollapse : List (Maybe a) -> List a
@@ -817,7 +699,7 @@ maybeListCollapse maybes =
   List.filterMap (\maybeElement -> maybeElement) maybes
 
 
-socialDecoder : Decoder ArticleExtension
+socialDecoder : Decoder SocialData
 socialDecoder =
   Decode.succeed SocialData
     |> DecodeP.requiredAt ["user", "name"] string
@@ -827,19 +709,17 @@ socialDecoder =
     |> DecodeP.required "retweeted" bool
     |> DecodeP.required "favorite_count" int
     |> DecodeP.required "retweet_count" int
-    |> Decode.map Social
 
 
-shareDecoder : Decoder ArticleExtension
+shareDecoder : Decoder ArticleId
 shareDecoder =
   Decode.oneOf
     [ Decode.at ["retweeted_status", "id_str"] Decode.string
     , Decode.at ["quoted_status", "id_str"] Decode.string
     ]
-    |> Decode.map Share
 
 
-textDecoder : Decoder ArticleExtension
+textDecoder : Decoder String
 textDecoder =
   Decode.andThen
     (\maybeShare ->
@@ -853,13 +733,12 @@ textDecoder =
                 , field "full_text" string
                 ]
             )
-            |> Decode.map Text
           )
     )
     (Decode.maybe (Decode.at ["retweeted_status", "id_str"] Decode.string))
 
 
-imagesDecoder : Decoder ArticleExtension
+imagesDecoder : Decoder (List ImageData)
 imagesDecoder =
   Decode.oneOf
     [ Decode.at ["extended_entities", "media"] tweetMediaDecoder
@@ -867,15 +746,14 @@ imagesDecoder =
     ]
 
 
-tweetMediaDecoder : Decoder ArticleExtension
+tweetMediaDecoder : Decoder (List ImageData)
 tweetMediaDecoder =
-  Decode.map Images
-    (Decode.list
-      (Decode.succeed ImageData
-        |> DecodeP.required "media_url_https" Decode.string
-        |> DecodeP.required "url" Decode.string
-      )
+  (Decode.list
+    (Decode.succeed ImageData
+      |> DecodeP.required "media_url_https" Decode.string
+      |> DecodeP.required "url" Decode.string
     )
+  )
 
 
 payloadErrorsDecoder : Decoder (List (String, Int))
