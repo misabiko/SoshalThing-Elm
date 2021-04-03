@@ -402,18 +402,28 @@ viewTweetButtons service article social =
             , classList [("repostedPostButton", social.reposted)]
             , onClick (Repost service article)
             ]
-            [ viewIcon "fa-retweet" "fas" ""
-            , span [] [ text (String.fromInt social.repostCount) ]
-            ]
+            ([ viewIcon "fa-retweet" "fas" "" ]
+            ++ (viewMaybe (
+              if social.repostCount > 0 then
+                Just (span [] [ text (String.fromInt social.repostCount) ])
+              else
+                Nothing
+            )))
+
         , a [ class "level-item"
             , class "articleButton"
             , class "likeButton"
             , classList [("likedPostButton", social.liked)]
             , onClick (Like service article)
             ]
-            [ viewIcon "fa-heart" (if social.liked then "fas" else "far") ""
-            , span [ ] [ text (String.fromInt social.likeCount) ]
-            ]
+            ([ viewIcon "fa-heart" (if social.liked then "fas" else "far") "" ]
+            ++ (viewMaybe (
+              if social.likeCount > 0 then
+                Just (span [ ] [ text (String.fromInt social.likeCount) ])
+              else
+                Nothing
+            )))
+
         , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
             [ viewIcon "fa-ellipsis-h" "fas" "" ]
         ]
