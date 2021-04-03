@@ -4,6 +4,8 @@ import Browser
 import Html exposing (..)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
+import Html.Lazy exposing (..)
+import Html.Keyed
 import Dict exposing (Dict)
 import Http
 import Time
@@ -301,8 +303,13 @@ view model =
   { title = "SoshalThing"
   , body =
       [ viewSidebar
-      , div [ id "timelineContainer" ] (List.map (viewTimeline model) model.timelines) ]
+      , lazy viewTimelineContainer model ]
   }
+
+
+viewTimelineContainer : Model -> Html Msg
+viewTimelineContainer model =
+  (div [ id "timelineContainer" ] (List.map (lazy2 viewTimeline model) model.timelines))
 
 
 viewSidebar : Html Msg
@@ -370,7 +377,19 @@ getArticles articles ids =
 
 viewContainer : TimeModel -> Service -> List ShareableArticle -> Html Msg
 viewContainer timeModel service shareableArticles =
-  div [ class "timelineArticles" ] (List.map (viewTweet timeModel service) shareableArticles)
+  Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (viewKeyedTweet timeModel service) shareableArticles)
+
+
+viewKeyedTweet : TimeModel -> Service -> ShareableArticle -> (String, Html Msg)
+viewKeyedTweet timeModel service shareableArticle =
+  (getShareableId shareableArticle, lazy3 viewTweet timeModel service shareableArticle)
+
+
+getShareableId : ShareableArticle -> String
+getShareableId shareableArticle =
+  case shareableArticle.sharedArticle of
+    Just shared -> shareableArticle.article.id ++ shared.id
+    Nothing -> shareableArticle.article.id
 
 
 viewTweetHeader : TimeModel -> Article -> SocialData -> Html Msg
