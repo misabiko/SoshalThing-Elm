@@ -58,6 +58,7 @@ type ArticleExtension
   = Social SocialData
   | Text String
   | Share String
+  | Images (List ImageData)
 
 
 type alias SocialData =
@@ -68,6 +69,12 @@ type alias SocialData =
   , reposted: Bool
   , likeCount: Int
   , repostCount: Int
+  }
+
+
+type alias ImageData =
+  { url: String
+  , compressedUrl: String
   }
 
 
@@ -422,6 +429,18 @@ getShareData article =
     Nothing -> Nothing
 
 
+getImageData : Article -> Maybe (List ImageData)
+getImageData article =
+  case (Dict.get "Images" article.extensions) of
+    Just ext ->
+      case ext of
+        Images data -> Just data
+
+        _ -> Nothing
+    
+    Nothing -> Nothing
+
+
 viewTweetSkeleton : TimeModel -> TweetSkeletonParts -> Article -> Html Msg
 viewTweetSkeleton timeModel parts article =
   case ((getTextData article, getSocialData article)) of
@@ -480,7 +499,7 @@ viewTweet timeModel shareableArticle =
     parts =
       { superHeader = getTweetSuperHeader shareableArticle
       , extra = getTweetExtra timeModel shareableArticle
-      , footer = Nothing
+      , footer = getTweetFooter shareableArticle
       }
   in
     viewTweetSkeleton timeModel parts actualTweet
@@ -536,6 +555,26 @@ getTweetExtra timeModel shareableArticle =
           Just (getQuoteExtra timeModel shared)
         Nothing ->
           Nothing
+    Nothing -> Nothing
+
+
+getMediaFooter : List ImageData -> Html Msg
+getMediaFooter images =
+  div [ class "postImages", class "postMedia" ]
+    (List.map (\imageData ->
+      div [ class "mediaHolder" ]
+        [ div [ class "is-hidden", class "imgPlaceholder" ] []
+        , img [ src imageData.url ] []
+        ]
+    ) images)
+
+
+getTweetFooter : ShareableArticle -> Maybe (Html Msg)
+getTweetFooter shareableArticle =
+  case (getImageData (getActualTweet shareableArticle)) of
+    Just images ->
+      Just (getMediaFooter images)
+
     Nothing -> Nothing
 
 
@@ -627,10 +666,14 @@ extensionsDecoder =
       (Decode.succeed List.append
         |> DecodeP.custom
             (Decode.succeed List.append
-              |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
-              |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
+              |> DecodeP.custom
+                  (Decode.succeed List.append
+                    |> DecodeP.custom (extensionDecoder "Social" socialDecoder)
+                    |> DecodeP.custom (extensionDecoder "Share" shareDecoder)
+                  )
+              |> DecodeP.custom (extensionDecoder "Text" textDecoder)
             )
-        |> DecodeP.custom (extensionDecoder "Text" textDecoder)
+        |> DecodeP.custom (extensionDecoder "Images" imagesDecoder)
       )
     ))
 
@@ -685,6 +728,25 @@ textDecoder =
           )
     )
     (Decode.maybe (Decode.at ["retweeted_status", "id_str"] Decode.string))
+
+
+imagesDecoder : Decoder ArticleExtension
+imagesDecoder =
+  Decode.oneOf
+    [ Decode.at ["extended_entities", "media"] tweetMediaDecoder
+    , Decode.at ["entities", "media"] tweetMediaDecoder
+    ]
+
+
+tweetMediaDecoder : Decoder ArticleExtension
+tweetMediaDecoder =
+  Decode.map Images
+    (Decode.list
+      (Decode.succeed ImageData
+        |> DecodeP.required "media_url_https" Decode.string
+        |> DecodeP.required "url" Decode.string
+      )
+    )
 
 
 payloadErrorsDecoder : Decoder (List (String, Int))
