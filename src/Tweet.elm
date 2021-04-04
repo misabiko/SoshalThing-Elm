@@ -12,6 +12,7 @@ import Maybe.Extra as MaybeE
 
 import Article exposing (Article, SocialData, Media(..), ImageData, VideoData, ShareableArticle)
 import Service exposing (Payload(..), RateLimitInfo)
+import Timeline exposing (TimelineShareable, isCompact, CompactMode(..))
 import TimeParser
 
 
@@ -51,9 +52,9 @@ viewIcon icon iconType size =
     [ i [ class iconType, class icon, class size ] [] ]
 
 
-viewKeyedTweet : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> service -> ShareableArticle -> (String, Html msg)
-viewKeyedTweet likeMsg repostMsg debugMsg timeModel service shareableArticle =
-  (Article.getShareableId shareableArticle, lazy2 (viewTweet likeMsg repostMsg debugMsg service) timeModel shareableArticle)
+viewKeyedTweet : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> service -> Bool -> ShareableArticle -> (String, Html msg)
+viewKeyedTweet likeMsg repostMsg debugMsg timeModel service compact shareableArticle =
+  (Article.getShareableId shareableArticle, lazy3 (viewTweet likeMsg repostMsg debugMsg service) timeModel compact shareableArticle)
 
 
 viewTweetHeader : TimeModel -> Article -> SocialData -> Html msg
@@ -208,14 +209,14 @@ getActualTweet shareableArticle =
     Nothing -> shareableArticle.article
 
 
-viewTweet : Like service msg -> Repost service msg -> (Article -> msg) -> service -> TimeModel -> ShareableArticle -> Html msg
-viewTweet likeMsg repostMsg debugMsg service timeModel shareableArticle =
+viewTweet : Like service msg -> Repost service msg -> (Article -> msg) -> service -> TimeModel -> Bool -> ShareableArticle -> Html msg
+viewTweet likeMsg repostMsg debugMsg service timeModel compact shareableArticle =
   let
     actualTweet = getActualTweet shareableArticle
     parts =
       { superHeader = getTweetSuperHeader shareableArticle
       , extra = getTweetExtra timeModel shareableArticle
-      , footer = getTweetFooter shareableArticle
+      , footer = getTweetFooter compact shareableArticle
       }
   in
     viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service actualTweet
@@ -310,10 +311,10 @@ imageFormatClass imageData =
     "portrait"
 
 
-getTweetFooter : ShareableArticle -> Maybe (Html msg)
-getTweetFooter shareableArticle =
+getTweetFooter : Bool -> ShareableArticle -> Maybe (Html msg)
+getTweetFooter compact shareableArticle =
   Maybe.andThen
-    (\media -> Just (lazy2 getMediaFooter True media))
+    (\media -> Just (lazy2 getMediaFooter compact media))
     (getActualTweet shareableArticle).media
 
 

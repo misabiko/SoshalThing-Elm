@@ -63,7 +63,7 @@ type alias ShareableArticle =
   }
 
 
-getShareableArticles : Collection -> List String -> List ShareableArticle
+getShareableArticles : Collection -> List Id -> List ShareableArticle
 getShareableArticles articles ids =
   List.filterMap
     (\id ->

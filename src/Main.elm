@@ -16,12 +16,13 @@ import Maybe.Extra
 import Article exposing (Article, ShareableArticle)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import Timeline exposing
-    ( Timeline
+    ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..), timelineArticlesToShareable
     , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
     , timelineRefreshSub
     )
 import Tweet
 import Filter exposing (..)
+import Timeline exposing (TimelineShareable)
 
 
 -- MAIN
@@ -90,6 +91,7 @@ initTimelines =
     , options = Dict.empty
     , interval = Just 64285
     , filters = []
+    , compactMode = Compact
     }
   , { title = "Art"
     , serviceName = "Twitter"
@@ -105,6 +107,7 @@ initTimelines =
         [ (HasMedia, ExcludeIfNot)
         , (IsRepost, ExcludeIf)
         ]
+    , compactMode = Expand
     }
   , { title = "1draw"
     , serviceName = "Twitter"
@@ -120,6 +123,7 @@ initTimelines =
         [ (HasMedia, ExcludeIfNot)
         , (IsRepost, ExcludeIf)
         ]
+    , compactMode = Compact
     }
   , { title = "User"
     , serviceName = "Twitter"
@@ -128,6 +132,7 @@ initTimelines =
     , options = Dict.empty
     , interval = Just 9000
     , filters = []
+    , compactMode = Compact
     }
   ]
 
@@ -397,16 +402,17 @@ viewTimeline model timeline =
                     (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
                     [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
             ]
-          , lazy3 (viewContainer service) model.time timeline.filters (Article.getShareableArticles service.articles timeline.articleIds)
+          , lazy4 (viewContainer service) model.time timeline.filters timeline.compactMode (timelineArticlesToShareable timeline.articleIds (Article.getShareableArticles service.articles (timelineArticlesToIds timeline.articleIds)))
           ]
 
 
-viewContainer : Service -> TimeModel -> List Filter -> List ShareableArticle -> Html Msg
-viewContainer service timeModel filters shareableArticles =
+viewContainer : Service -> TimeModel -> List Filter -> CompactMode -> List TimelineShareable -> Html Msg
+viewContainer service timeModel filters timelineCompact timelineShareables =
   Html.Keyed.node "div" [ class "timelineArticles" ]
-    ( List.map
+    ( List.map2
         (Tweet.viewKeyedTweet Like Repost DebugArticle timeModel service)
-        (Filter.filterArticles filters shareableArticles)
+        (List.map (\ts -> isCompact timelineCompact ts) timelineShareables)
+        (Filter.filterArticles filters (List.map (\ts -> ts.shareableArticle) timelineShareables))
     )
 
 

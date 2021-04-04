@@ -1,5 +1,5 @@
 module Timeline exposing
-    ( Timeline
+    ( Timeline, TimelineArticle, TimelineShareable, timelineArticlesToIds, timelineArticlesToShareable, isCompact, CompactMode(..)
     , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
     , timelineRefreshSub
     )
@@ -7,7 +7,7 @@ module Timeline exposing
 import Dict exposing (Dict)
 import Time
 
-import Article exposing (Article, ShareableArticle)
+import Article exposing (Article, ShareableArticle, getShareableArticles)
 import Service exposing (Service, Endpoint)
 import Filter exposing (..)
 
@@ -16,31 +16,94 @@ type alias Timeline =
   { title: String
   , serviceName: String
   , endpointName: String
-  , articleIds: List String
+  , articleIds: List TimelineArticle
   , options: Dict String String
   , interval: Maybe Int
   , filters: List Filter
+  , compactMode: CompactMode
   }
 
-updateTimelineArticles : List String -> String -> List Timeline -> List Timeline
+
+type alias TimelineArticle =
+    { id: Article.Id
+    , compact: SettingOverride CompactMode
+    }
+
+
+type alias TimelineShareable =
+    { shareableArticle: ShareableArticle
+    , compact: SettingOverride CompactMode
+    }
+
+
+type SettingOverride setting
+    = Inherit
+    | Overrided setting
+
+
+type CompactMode
+    = Compact
+    | Expand
+
+
+newTimelineArticle : Article.Id -> TimelineArticle
+newTimelineArticle id =
+  { id = id
+  , compact = Inherit
+  }
+
+
+isCompact : CompactMode -> TimelineShareable -> Bool
+isCompact timelineCompactMode timelineShareable =
+  case (timelineShareable.compact) of
+    Overrided compactMode ->
+      case compactMode of
+        Compact -> True
+        Expand -> False
+
+    Inherit ->
+      case timelineCompactMode of
+        Compact -> True
+        Expand -> False
+
+
+updateTimelineArticles : List Article.Id -> String -> List Timeline -> List Timeline
 updateTimelineArticles articleIds timelineTitle timelines =
   List.map (\timeline -> 
     if timeline.title == timelineTitle then
-      { timeline | articleIds = timelineSortArticles (appendNonMembers timeline.articleIds articleIds) }
+      { timeline | articleIds = timelineSortArticles (appendMissingArticleIds timeline.articleIds articleIds) }
     else
       timeline)
     timelines
 
 
-appendNonMembers : List a -> List a -> List a
-appendNonMembers existingValues newValues =
-  existingValues ++ (List.filter (\val -> not (List.member val existingValues)) newValues)
+appendMissingArticleIds : List TimelineArticle -> List Article.Id -> List TimelineArticle
+appendMissingArticleIds timelineArticles newArticles =
+  timelineArticles ++ (List.filterMap (\val ->
+    if List.member val (timelineArticlesToIds timelineArticles) then
+      Nothing
+    else
+      Just (newTimelineArticle val)
+  ) newArticles)
 
 
-timelineSortArticles : List String -> List String
+timelineArticlesToIds : List TimelineArticle -> List Article.Id
+timelineArticlesToIds timelineArticles =
+  List.map (\article -> article.id) timelineArticles
+
+
+timelineArticlesToShareable : List TimelineArticle -> List ShareableArticle -> List TimelineShareable
+timelineArticlesToShareable timelineArticles shareableArticles =
+  List.map2 (
+    \timelineArticle shareableArticle ->
+      TimelineShareable shareableArticle timelineArticle.compact
+  ) timelineArticles shareableArticles 
+
+
+timelineSortArticles : List TimelineArticle -> List TimelineArticle
 timelineSortArticles articleIds =
   articleIds
-    |> List.sortBy (\articleId -> Maybe.withDefault 0 (String.toInt articleId))
+    |> List.sortBy (\article -> Maybe.withDefault 0 (String.toInt (article.id)))
     |> List.reverse
 
 
