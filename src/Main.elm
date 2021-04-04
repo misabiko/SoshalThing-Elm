@@ -11,6 +11,7 @@ import Http
 import Time
 import Task
 import Url.Builder as UrlB
+import Maybe.Extra
 
 import Article exposing (Article, ShareableArticle)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
@@ -43,6 +44,7 @@ type alias Timeline =
   , endpointName: String
   , articleIds: List String
   , options: Dict String String
+  , interval: Maybe Int
   }
 
 
@@ -74,10 +76,10 @@ init _ =
   ( { services =  Dict.fromList
         [ initTwitter ]
     , timelines =
-      [ initTimeline "Twitter" "Home Timeline" "Home" Dict.empty
-      , initTimeline "Twitter" "List" "Art" (Dict.fromList [ ("slug", "Art"), ("owner_screen_name", "misabiko") ])
-      , initTimeline "Twitter" "Search" "1draw" (Dict.fromList [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き"), ("result_type", "recent") ])
-      , initTimeline "Twitter" "User Timeline" "User" Dict.empty
+      [ initTimeline "Twitter" "Home Timeline" "Home" Dict.empty (Just 64285)
+      , initTimeline "Twitter" "List" "Art" (Dict.fromList [ ("slug", "Art"), ("owner_screen_name", "misabiko") ]) (Just 9000)
+      , initTimeline "Twitter" "Search" "1draw" (Dict.fromList [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き"), ("result_type", "recent") ])  (Just 9000)
+      , initTimeline "Twitter" "User Timeline" "User" Dict.empty (Just 9000)
       ]
     , time =
         { zone = Time.utc
@@ -92,13 +94,14 @@ init _ =
   )
 
 
-initTimeline : String -> String -> String -> Dict String String -> Timeline
-initTimeline serviceName endpointName title options =
+initTimeline : String -> String -> String -> Dict String String -> Maybe Int -> Timeline
+initTimeline serviceName endpointName title options interval =
   { title = title
   , serviceName = serviceName
   , endpointName = endpointName
   , articleIds = []
   , options = options
+  , interval = interval
   }
 
 
@@ -227,7 +230,10 @@ update msg model =
             (model, Cmd.none)
 
     Refresh service endpoint timeline ->
-      (model, getEndpoint service endpoint timeline)
+      if Service.isReady endpoint then
+        (model, getEndpoint service endpoint timeline)
+      else
+        (model, Cmd.none)
 
     AdjustTimeZone newZone ->
       ( { model | time = (\t -> { t | zone = newZone }) model.time }
@@ -278,8 +284,27 @@ timelineSortArticles articleIds =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-  Sub.none
+subscriptions model =
+  List.map (timelineRefreshSub model.services) model.timelines
+    |> Maybe.Extra.values
+    |> Sub.batch
+
+
+timelineRefreshSub : Dict String Service -> Timeline -> Maybe (Sub Msg)
+timelineRefreshSub services timeline =
+  case (Dict.get timeline.serviceName services) of
+    Just service ->
+      case (Dict.get timeline.endpointName service.endpoints) of
+        Just endpoint ->
+          case timeline.interval of
+            Just interval ->
+              Just (Time.every (toFloat interval) (\_ -> Refresh service endpoint timeline))
+
+            Nothing -> Nothing
+
+        Nothing -> Nothing
+
+    Nothing -> Nothing
 
 
 -- VIEW

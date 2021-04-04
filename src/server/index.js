@@ -52,6 +52,13 @@ function objectifyResponse(response) {
 	}
 }
 
+function logRateLimit(response) {
+	console.log(`\nRate: ${response._headers.get('x-rate-limit-remaining')} / ${response._headers.get('x-rate-limit-limit')}`);
+	const reset = response._headers.get('x-rate-limit-reset');
+	const delta = (reset * 1000) - Date.now();
+	console.log(`Reset: ${Math.ceil(delta / 1000 / 60)} minutes`);
+}
+
 app.route('/twitter/v1/:endpoint1/:endpoint2')
 	.get(async (req, res, next) => {
 		try {
@@ -59,6 +66,7 @@ app.route('/twitter/v1/:endpoint1/:endpoint2')
 				...(req.query),
 			});
 
+			logRateLimit(response);
 			res.json(objectifyResponse(response));
 		} catch (e) {
 			parseQueryErrors(e, next);
@@ -70,6 +78,7 @@ app.route('/twitter/v1/:endpoint1/:endpoint2')
 				...(req.query),
 			});
 
+			logRateLimit(response);
 			res.json(objectifyResponse(response));
 		} catch (e) {
 			parseQueryErrors(e, next);
