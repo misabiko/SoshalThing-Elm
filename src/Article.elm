@@ -41,6 +41,7 @@ type alias SocialData =
 type alias ImageData =
   { url: String
   , compressedUrl: String
+  , size: {width: Int, height: Int}
   }
 
 

@@ -274,13 +274,19 @@ getTweetExtra timeModel shareableArticle =
     Nothing -> Nothing
 
 
-getMediaFooter : Media -> Html msg
-getMediaFooter media =
+getMediaFooter : Bool -> Media -> Html msg
+getMediaFooter compact media =
   case media of
     Images imageDatas ->
-      div [ class "postImages", class "postMedia" ]
-        (List.map (\imageData ->
-          div [ class "mediaHolder" ]
+      div [ class "postImages", class "postMedia", classList [("postImagesCompact", compact)] ]
+        (List.indexedMap (\index imageData ->
+          div [ class "mediaHolder"
+              , class (imageFormatClass imageData)
+              , classList
+                  [ ("mediaHolderCompact", compact)
+                  , ("thirdImage", (List.length imageDatas) == 3 && index == 2)
+                  ]
+              ]
             [ div [ class "is-hidden", class "imgPlaceholder" ] []
             , img [ src imageData.url ] []
             ]
@@ -296,10 +302,18 @@ getMediaFooter media =
       ]
 
 
+imageFormatClass : ImageData -> String
+imageFormatClass imageData =
+  if imageData.size.width > imageData.size.height then
+    "landscape"
+  else
+    "portrait"
+
+
 getTweetFooter : ShareableArticle -> Maybe (Html msg)
 getTweetFooter shareableArticle =
   Maybe.andThen
-    (\media -> Just (lazy getMediaFooter media))
+    (\media -> Just (lazy2 getMediaFooter True media))
     (getActualTweet shareableArticle).media
 
 
@@ -483,12 +497,25 @@ imageDecoder : Decoder Media
 imageDecoder =
   Decode.map Images
     (Decode.list
-      (Decode.map2 ImageData
+      (Decode.map3 ImageData
         (field "media_url_https" Decode.string)
         (field "url" Decode.string)
+        (field "sizes" (Decode.oneOf
+          [ (field "large" sizeDecoder)
+          , (field "medium" sizeDecoder)
+          , (field "small" sizeDecoder)
+          , (field "thumb" sizeDecoder)
+          ]
+        ))
       )
     )
 
+
+sizeDecoder : Decoder { width: Int, height: Int }
+sizeDecoder =
+  Decode.map2 (\w h -> { width = w, height = h })
+    (field "w" Decode.int)
+    (field "h" Decode.int)
 
 videoDecoder : Bool -> Decoder Media
 videoDecoder autoplay =
