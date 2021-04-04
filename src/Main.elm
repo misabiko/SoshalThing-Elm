@@ -367,7 +367,12 @@ viewServiceMenu services =
 
 viewTimelineContainer : Model -> Html Msg
 viewTimelineContainer model =
-  (div [ id "timelineContainer" ] (List.map (viewTimeline model) model.timelines))
+  Html.Keyed.node "div" [ id "timelineContainer" ] (List.map (viewKeyedTimeline model) model.timelines)
+
+
+viewKeyedTimeline : Model -> Timeline -> (String, Html Msg)
+viewKeyedTimeline model timeline =
+  (timeline.title, viewTimeline model timeline)
 
 
 viewTimeline : Model -> Timeline -> Html Msg
