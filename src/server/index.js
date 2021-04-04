@@ -37,6 +37,21 @@ function parseQueryErrors(e, next) {
 	next(e);
 }
 
+function objectifyResponse(response) {
+	if (!response._headers)
+		return response;
+	
+	if (response.statuses) {
+		response._headers = Object.fromEntries(response._headers.entries())
+		return response;
+	}
+
+	return {
+		statuses: response,
+		_headers: Object.fromEntries(response._headers.entries())
+	}
+}
+
 app.route('/twitter/v1/:endpoint1/:endpoint2')
 	.get(async (req, res, next) => {
 		try {
@@ -44,7 +59,7 @@ app.route('/twitter/v1/:endpoint1/:endpoint2')
 				...(req.query),
 			});
 
-			res.json(response);
+			res.json(objectifyResponse(response));
 		} catch (e) {
 			parseQueryErrors(e, next);
 		}
@@ -55,7 +70,7 @@ app.route('/twitter/v1/:endpoint1/:endpoint2')
 				...(req.query),
 			});
 
-			res.json(response);
+			res.json(objectifyResponse(response));
 		} catch (e) {
 			parseQueryErrors(e, next);
 		}

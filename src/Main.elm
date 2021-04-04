@@ -181,7 +181,7 @@ update msg model =
                 ( model, Cmd.none )
         Err reason ->
           let
-            _ = Debug.log "Error" reason
+            _ = Debug.log "Http Error" reason
           in
             (model, Cmd.none)
 
@@ -392,6 +392,14 @@ viewMaybe maybeElement =
 type alias EndpointPayload =
   { articles: List Article
   , timelineArticles: List String
+  , rateLimit: RateLimitInfo
+  }
+
+
+type alias RateLimitInfo =
+  { remaining: Int
+  , limit: Int
+  , reset: Int
   }
 
 

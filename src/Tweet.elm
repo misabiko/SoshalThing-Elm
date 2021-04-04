@@ -9,15 +9,23 @@ import Dict
 import Time
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
+import Json.Decode.Extra as DecodeE
 
-import Article exposing (Article, SocialData, ImageData)
+import Article exposing (Article, SocialData, ImageData, ShareableArticle)
 import TimeParser
-import Article exposing (ShareableArticle)
 
 
 type alias EndpointPayload =
   { articles: List Article
   , timelineArticles: List String
+  , rateLimit: RateLimitInfo
+  }
+
+
+type alias RateLimitInfo =
+  { remaining: Int
+  , limit: Int
+  , reset: Int
   }
 
 
@@ -272,12 +280,17 @@ getTweetFooter shareableArticle =
 -- DECODE
 
 
-unpackDecodedTweets : List ShareableArticle -> EndpointPayload
-unpackDecodedTweets decodedTweets =
+unpackDecodedTweets : RateLimitInfo -> List ShareableArticle -> EndpointPayload
+unpackDecodedTweets rateLimit decodedTweets =
   List.map unpackDecodedTweet decodedTweets
   |> List.unzip
   |> Tuple.mapFirst List.concat
-  |> (\tuple -> { articles = Tuple.first tuple, timelineArticles = Tuple.second tuple })
+  |> (\tuple ->
+      { articles = Tuple.first tuple
+      , timelineArticles = Tuple.second tuple
+      , rateLimit = rateLimit
+      }
+  )
 
 
 unpackDecodedTweet : ShareableArticle -> (List Article, String)
@@ -293,11 +306,24 @@ unpackDecodedTweet decodedTweet =
 
 payloadDecoder : Decoder EndpointPayload
 payloadDecoder =
-  Decode.oneOf
-    [ field "statuses" (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))
-    , (Decode.map unpackDecodedTweets (Decode.list tweetDecoder))
-    , (Decode.map unpackDecodedTweets (Decode.map List.singleton tweetDecoder))
-    ]
+  Decode.map2 unpackDecodedTweets
+    rateLimitDecoder
+    (
+      Decode.oneOf
+        [ (Decode.list tweetDecoder)
+        , (Decode.map List.singleton tweetDecoder)
+        ]
+        |> field "statuses"
+    )
+
+
+
+rateLimitDecoder : Decoder RateLimitInfo
+rateLimitDecoder =
+  Decode.map3 RateLimitInfo
+    (Decode.at ["_headers", "x-rate-limit-remaining"] DecodeE.parseInt)
+    (Decode.at ["_headers", "x-rate-limit-limit"] DecodeE.parseInt)
+    (Decode.at ["_headers", "x-rate-limit-reset"] DecodeE.parseInt)
 
 
 tweetDecoder : Decoder ShareableArticle
