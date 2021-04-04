@@ -106,10 +106,10 @@ initTwitter =
   ( "Twitter"
   , { name = "Twitter"
     , endpoints = Dict.fromList
-        [ ( "Home Timeline", { name = "Home Timeline", baseUrl = "http://127.0.0.1:5000", path = [ "home_timeline" ] } )
-        , ( "User Timeline", { name = "User Timeline", baseUrl = "http://127.0.0.1:5000", path = [ "user_timeline" ] } )
-        , ( "Search", { name = "Search", baseUrl = "http://127.0.0.1:5000", path = [ "search" ] } )
-        , ( "List", { name = "List", baseUrl = "http://127.0.0.1:5000", path = [ "list" ] } )
+        [ ( "Home Timeline", { name = "Home Timeline", baseUrl = "http://localhost:5000", path = [ "twitter", "home_timeline" ] } )
+        , ( "User Timeline", { name = "User Timeline", baseUrl = "http://localhost:5000", path = [ "twitter", "user_timeline" ] } )
+        , ( "Search", { name = "Search", baseUrl = "http://localhost:5000", path = [ "twitter", "search" ] } )
+        , ( "List", { name = "List", baseUrl = "http://localhost:5000", path = [ "twitter", "list" ] } )
         ]
     , articles = Dict.empty
     }
@@ -320,7 +320,7 @@ postLike service article =
   case article.social of
     Just social ->
       Http.post
-        { url = "http://127.0.0.1:5000/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
+        { url = "http://localhost:5000/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
         , body = Http.emptyBody
         , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
         }
@@ -336,7 +336,7 @@ postRetweet service article =
         Cmd.none
       else
         Http.post
-          { url = "http://127.0.0.1:5000/retweet/" ++ article.id
+          { url = "http://localhost:5000/retweet/" ++ article.id
           , body = Http.emptyBody
           , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
           }
