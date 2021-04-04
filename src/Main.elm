@@ -320,7 +320,7 @@ postLike service article =
   case article.social of
     Just social ->
       Http.post
-        { url = "http://localhost:5000/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
+        { url = "http://localhost:5000/twitter/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
         , body = Http.emptyBody
         , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
         }
@@ -336,7 +336,7 @@ postRetweet service article =
         Cmd.none
       else
         Http.post
-          { url = "http://localhost:5000/retweet/" ++ article.id
+          { url = "http://localhost:5000/twitter/retweet/" ++ article.id
           , body = Http.emptyBody
           , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
           }

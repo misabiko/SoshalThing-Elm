@@ -28,7 +28,7 @@ app.use(favicon(icoPath));
 app.use('/main.js', express.static(path.join(__dirname, 'index.js')));
 app.use('/style.css', express.static(path.join(__dirname, 'style.css')));
 
-app.use(function(err, req, res, _next) {
+app.use(function (err, req, res, _next) {
 	console.error(err.stack)
 	res.status(500).send('Something broke!')
 })
@@ -66,6 +66,33 @@ twitterRouter.get('/search', async (req, res) => {
 	const response = await clientV1.get('search/tweets', {
 		tweet_mode: 'extended',
 		...(req.query),
+	});
+
+	res.json(response);
+});
+
+twitterRouter.post('/like/:id', async (req, res) => {
+	const response = await clientV1.post('favorites/create', {
+		id: req.params.id,
+		tweet_mode: 'extended',
+	});
+
+	res.json(response);
+});
+
+twitterRouter.post('/unlike/:id', async (req, res) => {
+	const response = await clientV1.post('favorites/destroy', {
+		id: req.params.id,
+		tweet_mode: 'extended',
+	});
+
+	res.json(response);
+});
+
+twitterRouter.post('/retweet/:id', async (req, res) => {
+	const response = await clientV1.post('statuses/retweet', {
+		id: req.params.id,
+		tweet_mode: 'extended',
 	});
 
 	res.json(response);
