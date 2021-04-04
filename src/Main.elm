@@ -15,6 +15,7 @@ import Url.Builder as UrlB
 import Article exposing (Article, ShareableArticle)
 import TimeParser
 import Tweet
+import Url.Builder exposing (crossOrigin)
 
 
 -- MAIN
@@ -63,10 +64,20 @@ type alias TimeModel =
   }
 
 
+type SidebarMenu
+  = ServiceMenu
+
+
+type Sidebar
+  = Collapsed
+  | Expanded SidebarMenu
+
+
 type alias Model =
   { services: Dict String Service
   , timelines: List Timeline
   , time : TimeModel
+  , sidebar : Sidebar
   }
 
 
@@ -84,6 +95,7 @@ init _ =
         { zone = Time.utc
         , lastNow = Time.millisToPosix 0
         }
+    , sidebar = Collapsed
     }
   , Cmd.batch
       [ Task.perform AdjustTimeZone Time.here
@@ -143,6 +155,7 @@ type Msg
   | NewTime Time.Posix
   | Like Service Article
   | Repost Service Article
+  | ToggleSidebar
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -210,6 +223,14 @@ update msg model =
     Repost service article ->
       (model, postRetweet service article)
 
+    ToggleSidebar ->
+      case model.sidebar of
+        Collapsed ->
+          ( { model | sidebar = Expanded ServiceMenu}, Cmd.none )
+
+        Expanded _ ->
+          ( { model | sidebar = Collapsed}, Cmd.none )
+
 updateArticles : Service -> Timeline -> EndpointPayload -> Model -> ( Model, Cmd Msg )
 updateArticles service timeline payload model =
   ( { model | services = Dict.insert service.name (updateServiceArticles payload.articles service) model.services
@@ -267,7 +288,7 @@ view : Model -> Browser.Document Msg
 view model =
   { title = "SoshalThing"
   , body =
-      [ viewSidebar
+      [ viewSidebar model
       , lazy viewTimelineContainer model ]
   }
 
@@ -277,11 +298,33 @@ viewTimelineContainer model =
   (div [ id "timelineContainer" ] (List.map (lazy2 viewTimeline model) model.timelines))
 
 
-viewSidebar : Html Msg
-viewSidebar =
+viewSidebar : Model -> Html Msg
+viewSidebar model =
   nav [ id "sidebar" ]
-    [ div [ id "sidebarButtons" ]
-      [ button [] [ viewIcon "fa-angle-double-right" "fas" "fa-2x" ] ]
+    <| case model.sidebar of
+        Collapsed ->
+          [ div [ id "sidebarButtons" ]
+              [ button [ onClick ToggleSidebar ] [ viewIcon "fa-angle-double-right" "fas" "fa-2x" ] ]
+          ]
+        
+        Expanded menu ->
+          [ viewSidebarMenu model menu
+          , div [ id "sidebarButtons" ]
+              [ button [ onClick ToggleSidebar ] [ viewIcon "fa-angle-double-left" "fas" "fa-2x" ] ]
+          ]
+
+
+viewSidebarMenu : Model -> SidebarMenu -> Html Msg
+viewSidebarMenu model sidebarMenu =
+  case sidebarMenu of
+    ServiceMenu ->
+      viewServiceMenu model
+
+
+viewServiceMenu : Model -> Html Msg
+viewServiceMenu model =
+  div [ class "sidebarMenu" ]
+    [ div [ class "box" ] [ text "Twitter" ]
     ]
 
 
@@ -316,6 +359,15 @@ viewTimeline model timeline =
 viewContainer : TimeModel -> Service -> List ShareableArticle -> Html Msg
 viewContainer timeModel service shareableArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (Tweet.viewKeyedTweet Like Repost timeModel service) shareableArticles)
+
+
+viewMaybe : Maybe (Html Msg) -> List (Html Msg)
+viewMaybe maybeElement =
+  case maybeElement of
+    Just element ->
+      [element]
+    Nothing ->
+      []
 
 
 -- HTTP
