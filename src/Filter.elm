@@ -1,6 +1,6 @@
 module Filter exposing
   ( Filter, FilterMethod(..), FilterMode(..)
-  , filterArticles
+  , filterShareableArticles, filterArticles
   )
 
 import Maybe.Extra as MaybeE
@@ -19,25 +19,51 @@ type FilterMethod
 
 type FilterMode = ExcludeIf | ExcludeIfNot
 
-filterArticles : List Filter -> List ShareableArticle -> List ShareableArticle
-filterArticles filters shareableArticles =
-  List.filter (passFiltersArticle filters) shareableArticles
+filterShareableArticles : List Filter -> List ShareableArticle -> List ShareableArticle
+filterShareableArticles filters shareableArticles =
+  List.filter (passFiltersShareableArticle filters) shareableArticles
+
+filterArticles : List Filter -> List Article -> List Article
+filterArticles filters articles =
+  List.filter (passFiltersArticle filters) articles
 
 
-passFiltersArticle : List Filter -> ShareableArticle -> Bool
-passFiltersArticle filters shareableArticle =
+passFiltersShareableArticle : List Filter -> ShareableArticle -> Bool
+passFiltersShareableArticle filters shareableArticle =
   List.any (\filter ->
     case (Tuple.second filter) of
       ExcludeIf ->
-        passFilterArticle (Tuple.first filter) shareableArticle
+        passFilterShareableArticle (Tuple.first filter) shareableArticle
       ExcludeIfNot ->
-        not (passFilterArticle (Tuple.first filter) shareableArticle)
+        not (passFilterShareableArticle (Tuple.first filter) shareableArticle)
   ) filters
     |> not
 
 
-passFilterArticle : FilterMethod -> ShareableArticle -> Bool
-passFilterArticle filter shareableArticle =
+passFiltersArticle : List Filter -> Article -> Bool
+passFiltersArticle filters article =
+  List.any (\filter ->
+    case (Tuple.second filter) of
+      ExcludeIf ->
+        passFilterArticle (Tuple.first filter) article
+      ExcludeIfNot ->
+        not (passFilterArticle (Tuple.first filter) article)
+  ) filters
+    |> not
+
+
+passFilterArticle : FilterMethod -> Article -> Bool
+passFilterArticle filter article =
+  case filter of
+    HasMedia ->
+      (MaybeE.isJust article.media)
+
+    IsRepost ->
+      False
+
+
+passFilterShareableArticle : FilterMethod -> ShareableArticle -> Bool
+passFilterShareableArticle filter shareableArticle =
   case filter of
     HasMedia ->
       case shareableArticle.sharedArticle of

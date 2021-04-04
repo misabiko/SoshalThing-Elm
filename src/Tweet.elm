@@ -305,10 +305,14 @@ getMediaFooter compact media =
 
 imageFormatClass : ImageData -> String
 imageFormatClass imageData =
-  if imageData.size.width > imageData.size.height then
-    "landscape"
-  else
-    "portrait"
+  case imageData.size of
+    Just size ->
+      if size.width > size.height then
+        "landscape"
+      else
+        "portrait"
+
+    Nothing -> "portrait"
 
 
 getTweetFooter : Bool -> ShareableArticle -> Maybe (Html msg)
@@ -377,10 +381,21 @@ rateLimitDecoder =
 tweetDecoder : Decoder ShareableArticle
 tweetDecoder =
   Decode.andThen (\shareableArticle ->
-      Decode.succeed { shareableArticle
-        | article = fixTweetText shareableArticle.article
-        , sharedArticle = Maybe.map fixTweetText shareableArticle.sharedArticle
-      }
+      case (getTweetType shareableArticle) of
+        Quote ->
+          Decode.andThen (\maybeQuoteUrl ->
+            Decode.succeed { shareableArticle
+              | article = fixTweetText maybeQuoteUrl shareableArticle.article
+              , sharedArticle = Maybe.map (fixTweetText maybeQuoteUrl) shareableArticle.sharedArticle
+            }
+          )
+          (Decode.maybe (Decode.at ["quoted_status_permalink", "url"] Decode.string))
+
+        _ ->
+          Decode.succeed { shareableArticle
+            | article = fixTweetText Nothing shareableArticle.article
+            , sharedArticle = Maybe.map (fixTweetText Nothing) shareableArticle.sharedArticle
+          }
     )
     (Decode.map2 ShareableArticle
       topTweetDecoder
@@ -392,27 +407,37 @@ tweetDecoder =
         )))
 
 
-fixTweetText : Article -> Article
-fixTweetText article =
-  case (article.text, article.media) of
-    (Just textStr, Just media) ->
+fixTweetText : Maybe String -> Article -> Article
+fixTweetText maybeQuoteUrl article =
+  case article.text of
+    Just textStr ->
       {article | text =
-        case media of
-          Images imageDatas ->
-            List.foldl (\imageData foldedText ->
-              String.replace imageData.compressedUrl "" foldedText
-            ) textStr imageDatas
-            |> String.trimRight
-            |> Just
-
-          Video videoData ->
-            String.replace videoData.compressedUrl "" textStr
-            |> String.trimRight
-            |> Just
+        Just ((case article.media of
+          Just media -> fixTweetTextMedia media textStr
+          Nothing -> textStr
+        )
+          |> (\newTextStr -> case maybeQuoteUrl of
+                Just quoteUrl -> 
+                  String.replace quoteUrl "" newTextStr
+                    |> String.trimRight
+                Nothing -> newTextStr
+             ))
       }
+    Nothing -> article
 
-    _ -> article
 
+fixTweetTextMedia : Media -> String -> String
+fixTweetTextMedia media textStr =
+  case media of
+    Images imageDatas ->
+      List.foldl (\imageData foldedText ->
+        String.replace imageData.compressedUrl "" foldedText
+      ) textStr imageDatas
+      |> String.trimRight
+
+    Video videoData ->
+      String.replace videoData.compressedUrl "" textStr
+      |> String.trimRight
 
 topTweetDecoder : Decoder Article
 topTweetDecoder =
@@ -501,13 +526,13 @@ imageDecoder =
       (Decode.map3 ImageData
         (field "media_url_https" Decode.string)
         (field "url" Decode.string)
-        (field "sizes" (Decode.oneOf
+        (field "sizes" (Decode.maybe (Decode.oneOf
           [ (field "large" sizeDecoder)
           , (field "medium" sizeDecoder)
           , (field "small" sizeDecoder)
           , (field "thumb" sizeDecoder)
           ]
-        ))
+        )))
       )
     )
 

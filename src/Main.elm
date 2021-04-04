@@ -18,11 +18,10 @@ import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import Timeline exposing
     ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..), timelineArticlesToShareable
     , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
-    , timelineRefreshSub
+    , timelineRefreshSub, TimelineShareable
     )
 import Tweet
 import Filter exposing (..)
-import Timeline exposing (TimelineShareable)
 
 
 -- MAIN
@@ -412,7 +411,7 @@ viewContainer service timeModel filters timelineCompact timelineShareables =
     ( List.map2
         (Tweet.viewKeyedTweet Like Repost DebugArticle timeModel service)
         (List.map (\ts -> isCompact timelineCompact ts) timelineShareables)
-        (Filter.filterArticles filters (List.map (\ts -> ts.shareableArticle) timelineShareables))
+        (Filter.filterShareableArticles filters (List.map (\ts -> ts.shareableArticle) timelineShareables))
     )
 
 
