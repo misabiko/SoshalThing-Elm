@@ -90,6 +90,7 @@ init _ =
   , Cmd.batch
       [ Task.perform AdjustTimeZone Time.here
       , Task.perform NewTime Time.now
+      , Task.perform identity (Task.succeed RefreshEverything)
       ]
   )
 
@@ -139,6 +140,7 @@ type Msg
   = GotPayload Service Endpoint Timeline (Result Http.Error (Result (List (String, Int)) Payload))
   | GotServicePayload Service (Result Http.Error (Result (List (String, Int)) Payload))
   | Refresh Service Endpoint Timeline
+  | RefreshEverything
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
   | Like Service Article
@@ -230,10 +232,19 @@ update msg model =
             (model, Cmd.none)
 
     Refresh service endpoint timeline ->
-      if Service.isReady endpoint then
-        (model, getEndpoint service endpoint timeline)
-      else
-        (model, Cmd.none)
+      (model, getEndpoint service endpoint timeline)
+
+    RefreshEverything ->
+      (model
+      , Cmd.batch
+          (List.filterMap (\timeline ->
+            case (getTimelineServiceEndpoint model.services timeline) of
+              Just (service, endpoint) ->
+                Just (getEndpoint service endpoint timeline)
+
+              Nothing -> Nothing
+          ) model.timelines)
+      )
 
     AdjustTimeZone newZone ->
       ( { model | time = (\t -> { t | zone = newZone }) model.time }
@@ -280,6 +291,20 @@ timelineSortArticles articleIds =
     |> List.reverse
 
 
+getTimelineServiceEndpoint : Dict String Service -> Timeline -> Maybe (Service, Endpoint)
+getTimelineServiceEndpoint services timeline =
+  case (Dict.get timeline.serviceName services) of
+    Just service ->
+      case (Dict.get timeline.endpointName service.endpoints) of
+        Just endpoint ->
+            Just (service, endpoint)
+
+        Nothing -> Nothing
+
+    Nothing -> Nothing
+
+
+
 -- SUBSCRIPTIONS
 
 
@@ -292,19 +317,11 @@ subscriptions model =
 
 timelineRefreshSub : Dict String Service -> Timeline -> Maybe (Sub Msg)
 timelineRefreshSub services timeline =
-  case (Dict.get timeline.serviceName services) of
-    Just service ->
-      case (Dict.get timeline.endpointName service.endpoints) of
-        Just endpoint ->
-          case timeline.interval of
-            Just interval ->
-              Just (Time.every (toFloat interval) (\_ -> Refresh service endpoint timeline))
+  case ((getTimelineServiceEndpoint services timeline), timeline.interval) of
+    (Just (service, endpoint), Just interval) ->
+      Just (Time.every (toFloat interval) (\_ -> Refresh service endpoint timeline))
 
-            Nothing -> Nothing
-
-        Nothing -> Nothing
-
-    Nothing -> Nothing
+    _ -> Nothing
 
 
 -- VIEW
@@ -315,13 +332,8 @@ view model =
   { title = "SoshalThing"
   , body =
       [ viewSidebar model
-      , lazy viewTimelineContainer model ]
+      , viewTimelineContainer model ]
   }
-
-
-viewTimelineContainer : Model -> Html Msg
-viewTimelineContainer model =
-  (div [ id "timelineContainer" ] (List.map (lazy2 viewTimeline model) model.timelines))
 
 
 viewSidebar : Model -> Html Msg
@@ -344,51 +356,50 @@ viewSidebarMenu : Model -> SidebarMenu -> Html Msg
 viewSidebarMenu model sidebarMenu =
   case sidebarMenu of
     ServiceMenu ->
-      viewServiceMenu model
+      lazy viewServiceMenu (Dict.values model.services)
 
 
-viewServiceMenu : Model -> Html Msg
-viewServiceMenu model =
+viewServiceMenu : List Service -> Html Msg
+viewServiceMenu services =
   div [ class "sidebarMenu" ]
-    <| List.map Service.viewServiceSettings (Dict.values model.services)
+    <| List.map (lazy Service.viewServiceSettings) services
 
 
-viewIcon : String -> String -> String -> Html Msg
-viewIcon icon iconType size =
-  span [ class "icon" ]
-    [ i [ class iconType, class icon, class size ] [] ]
+viewTimelineContainer : Model -> Html Msg
+viewTimelineContainer model =
+  (div [ id "timelineContainer" ] (List.map (lazy (viewTimeline model)) model.timelines))
 
 
 viewTimeline : Model -> Timeline -> Html Msg
 viewTimeline model timeline =
-  case (Dict.get timeline.serviceName model.services) of
+  case (getTimelineServiceEndpoint model.services timeline) of
     Nothing ->
-      text (Debug.log (timeline.title ++ " Error") "Couldn't find service.")
+      text (Debug.log (timeline.title ++ " Error") "Couldn't find service or endpoint.")
     
-    Just service ->
-      case (Dict.get timeline.endpointName service.endpoints) of
-        Nothing ->
-          text (Debug.log (timeline.title ++ " Error") "Couldn't find endpoint.")
-
-        Just endpoint ->
-          let
-            endpointReady = isReady endpoint
-          in
-          div [ class "timeline" ]
-            [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
-              [ strong [] [ text timeline.title ]
-              , div [ class "timelineButtons" ]
-                  [ button
-                      (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
-                      [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
-              ]
-            , viewContainer model.time service (Article.getShareableArticles service.articles timeline.articleIds)
-            ]
+    Just (service, endpoint) ->
+      let
+        endpointReady = isReady endpoint
+      in
+      div [ class "timeline" ]
+        [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
+          [ strong [] [ text timeline.title ]
+          , div [ class "timelineButtons" ]
+              [ button
+                  (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
+                  [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
+          ]
+        , viewContainer model.time service (Article.getShareableArticles service.articles timeline.articleIds)
+        ]
 
 
 viewContainer : TimeModel -> Service -> List ShareableArticle -> Html Msg
 viewContainer timeModel service shareableArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (Tweet.viewKeyedTweet Like Repost timeModel service) shareableArticles)
+
+viewIcon : String -> String -> String -> Html Msg
+viewIcon icon iconType size =
+  span [ class "icon" ]
+    [ i [ class iconType, class icon, class size ] [] ]
 
 
 viewMaybe : Maybe (Html Msg) -> List (Html Msg)

@@ -8,6 +8,7 @@ module Service exposing
 import Html exposing (..)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
+import Html.Lazy exposing (..)
 import Dict exposing (Dict)
 import Url.Builder as UrlB
 
@@ -71,7 +72,7 @@ viewServiceSettings : Service -> Html msg
 viewServiceSettings service =
   div [ class "box" ]
     ( (text service.name) ::
-      (List.map viewEndpointStatus (Dict.values service.endpoints))
+      (List.map (lazy viewEndpointStatus) (Dict.values service.endpoints))
     )
 
 
