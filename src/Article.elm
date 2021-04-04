@@ -1,5 +1,5 @@
 module Article exposing
-    ( Article, ArticleId, Collection
+    ( Article, Id, Collection, listToDict
     , SocialData, ImageData
     , ShareableArticle, getShareableArticles, getShareableId
     )
@@ -10,16 +10,16 @@ import Time
 
 
 type alias Article =
-  { id: ArticleId
+  { id: Id
   , creationDate: Time.Posix
   , text: Maybe String
   , social: Maybe SocialData
-  , share: Maybe ArticleId
+  , share: Maybe Id
   , images: Maybe (List ImageData)
   }
 
 
-type alias ArticleId = String
+type alias Id = String
 
 
 type alias Collection =
@@ -81,3 +81,9 @@ getShareableId shareableArticle =
   case shareableArticle.sharedArticle of
     Just shared -> shareableArticle.article.id ++ shared.id
     Nothing -> shareableArticle.article.id
+
+
+listToDict : List Article -> Collection
+listToDict articles =
+  Dict.fromList
+    <| List.map (\article -> (article.id, article)) articles

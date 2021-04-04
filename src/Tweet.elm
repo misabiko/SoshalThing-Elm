@@ -12,25 +12,8 @@ import Json.Decode.Pipeline as DecodeP
 import Json.Decode.Extra as DecodeE
 
 import Article exposing (Article, SocialData, ImageData, ShareableArticle)
+import Service exposing (Payload(..), RateLimitInfo)
 import TimeParser
-
-
-type alias EndpointPayload =
-  { articles: List Article
-  , timelineArticles: List String
-  , rateLimit: RateLimitInfo
-  }
-
-
-type alias RateLimitInfo =
-  { remaining: Int
-  , limit: Int
-  , reset: Int
-  }
-
-
-type alias EndpointPayloadResult =
-  Result (List (String, Int)) EndpointPayload
 
 
 type alias TweetSkeletonParts msg =
@@ -280,16 +263,23 @@ getTweetFooter shareableArticle =
 -- DECODE
 
 
-unpackDecodedTweets : RateLimitInfo -> List ShareableArticle -> EndpointPayload
-unpackDecodedTweets rateLimit decodedTweets =
+unpackDecodedTweets : Maybe RateLimitInfo -> List ShareableArticle -> Payload
+unpackDecodedTweets maybeRateLimit decodedTweets =
   List.map unpackDecodedTweet decodedTweets
   |> List.unzip
   |> Tuple.mapFirst List.concat
   |> (\tuple ->
-      { articles = Tuple.first tuple
-      , timelineArticles = Tuple.second tuple
-      , rateLimit = rateLimit
-      }
+      case maybeRateLimit of
+        Just rateLimit ->
+          RateLimitedPayload
+            (Tuple.first tuple)
+            (Tuple.second tuple)
+            rateLimit
+
+        Nothing ->
+          FreePayload
+            (Tuple.first tuple)
+            (Tuple.second tuple)
   )
 
 
@@ -304,10 +294,10 @@ unpackDecodedTweet decodedTweet =
   )
 
 
-payloadDecoder : Decoder EndpointPayload
+payloadDecoder : Decoder Payload
 payloadDecoder =
   Decode.map2 unpackDecodedTweets
-    rateLimitDecoder
+    (Decode.maybe rateLimitDecoder)
     (
       Decode.oneOf
         [ (Decode.list tweetDecoder)
@@ -390,7 +380,7 @@ socialDecoder =
     |> DecodeP.required "retweet_count" int
 
 
-shareDecoder : Decoder Article.ArticleId
+shareDecoder : Decoder Article.Id
 shareDecoder =
   Decode.oneOf
     [ Decode.at ["retweeted_status", "id_str"] Decode.string
@@ -443,7 +433,7 @@ payloadErrorsDecoder =
       (field "code" int)
 
 
-payloadResponseDecoder : Decoder EndpointPayloadResult
+payloadResponseDecoder : Decoder (Result (List (String, Int)) Payload)
 payloadResponseDecoder =
   Decode.andThen (\maybeErrors ->
         case maybeErrors of

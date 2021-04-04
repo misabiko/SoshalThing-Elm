@@ -13,9 +13,11 @@ import Task
 import Url.Builder as UrlB
 
 import Article exposing (Article, ShareableArticle)
+import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import TimeParser
 import Tweet
 import Url.Builder exposing (crossOrigin)
+import Service
 
 
 -- MAIN
@@ -32,21 +34,6 @@ main =
 
 
 -- MODEL
-
-
-type alias Service =
-  { name: String
-  , endpoints: Dict String Endpoint
-  , articles: Article.Collection
-  }
-
-
-type alias Endpoint =
-  { name: String
-  , baseUrl: String
-  , path: List String
-  , options: List UrlB.QueryParameter
-  }
 
 
 type alias Timeline =
@@ -119,23 +106,24 @@ initTwitter =
   ( "Twitter"
   , { name = "Twitter"
     , endpoints = Dict.fromList
-        [ initTwitterEndpoint "Home Timeline" [ "statuses", "home_timeline" ]
-        , initTwitterEndpoint "User Timeline" [ "statuses", "user_timeline" ]
-        , initTwitterEndpoint "Search" [ "search", "tweets" ]
-        , initTwitterEndpoint "List" [ "lists", "statuses" ]
+        [ initTwitterEndpoint "Home Timeline" [ "statuses", "home_timeline" ] (Just (Service.initRateLimit 15 (15*60*1000)))
+        , initTwitterEndpoint "User Timeline" [ "statuses", "user_timeline" ] (Just (Service.initRateLimit 900 (15*60*1000)))
+        , initTwitterEndpoint "Search" [ "search", "tweets" ] (Just (Service.initRateLimit 180 (15*60*1000)))
+        , initTwitterEndpoint "List" [ "lists", "statuses" ] (Just (Service.initRateLimit 900 (15*60*1000)))
         ]
     , articles = Dict.empty
     }
   )
 
 
-initTwitterEndpoint : String -> List String -> (String, Endpoint)
-initTwitterEndpoint name path =
+initTwitterEndpoint : String -> List String -> Maybe RateLimitInfo -> (String, Endpoint)
+initTwitterEndpoint name path maybeRateLimit =
   ( name
   , { name = name
     , baseUrl = "http://localhost:5000"
     , path = [ "twitter", "v1" ] ++ path
     , options = [UrlB.string "tweet_mode" "extended"]
+    , rateLimit = maybeRateLimit
     }
   )
 
@@ -143,13 +131,9 @@ initTwitterEndpoint name path =
 -- UPDATE
 
 
-type alias EndpointPayloadResult =
-  Result (List (String, Int)) EndpointPayload
-
-
 type Msg
-  = GotEndpointPayload Service Timeline (Result Http.Error EndpointPayloadResult)
-  | GotServicePayload Service (Result Http.Error EndpointPayloadResult)
+  = GotPayload Service Endpoint Timeline (Result Http.Error (Result (List (String, Int)) Payload))
+  | GotServicePayload Service (Result Http.Error (Result (List (String, Int)) Payload))
   | Refresh Service Endpoint Timeline
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
@@ -162,17 +146,36 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
   case msg of
-    GotEndpointPayload service timeline result ->
+    GotPayload service endpoint timeline result ->
       case result of
         Ok payloadResult ->
           case payloadResult of
-            Ok endpointPayload ->
-              ( { model
-                  | services = Dict.insert service.name (updateServiceArticles endpointPayload.articles service) model.services
-                  , timelines = updateTimelineArticles endpointPayload.timelineArticles timeline.title model.timelines
-                }
-              , Task.perform NewTime Time.now
-              )
+            Ok payload ->
+              case payload of
+                FreePayload articles timelineArticles ->
+                  ( { model
+                      | services =
+                          Dict.insert service.name
+                            { service | articles = Dict.union (Article.listToDict articles) service.articles }
+                            model.services
+                      , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
+                    }
+                  , Task.perform NewTime Time.now
+                  )
+
+                RateLimitedPayload articles timelineArticles rateLimit ->
+                  ( { model
+                      | services =
+                          Dict.insert service.name
+                            { service
+                              | articles = Dict.union (Article.listToDict articles) service.articles
+                              , endpoints = Dict.insert endpoint.name { endpoint | rateLimit = Just rateLimit} service.endpoints
+                            }
+                            model.services
+                      , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
+                    }
+                  , Task.perform NewTime Time.now
+                  )
 
             Err errors ->
               let
@@ -189,10 +192,27 @@ update msg model =
       case result of
         Ok payloadResult ->
           case payloadResult of
-            Ok endpointPayload ->
-              ( { model | services = Dict.insert service.name (updateServiceArticles endpointPayload.articles service) model.services }
-              , Task.perform NewTime Time.now
-              )
+            Ok payload ->
+              case payload of
+                FreePayload articles timelineArticles ->
+                  ( { model | services =
+                      Dict.insert
+                        service.name
+                        { service | articles = Dict.union (Article.listToDict articles) service.articles }
+                        model.services
+                    }
+                  , Task.perform NewTime Time.now
+                  )
+
+                RateLimitedPayload articles timelineArticles rateLimit ->
+                  ( { model | services =
+                      Dict.insert
+                        service.name
+                        { service | articles = Dict.union (Article.listToDict articles) service.articles }
+                        model.services
+                    }
+                  , Task.perform NewTime Time.now
+                  )
 
             Err errors ->
               let
@@ -229,26 +249,6 @@ update msg model =
 
     ShowSidebarMenu menu ->
       ( { model | sidebar = Expanded menu}, Cmd.none )
-
-
-updateArticles : Service -> Timeline -> EndpointPayload -> Model -> ( Model, Cmd Msg )
-updateArticles service timeline payload model =
-  ( { model | services = Dict.insert service.name (updateServiceArticles payload.articles service) model.services
-            , timelines = updateTimelineArticles payload.timelineArticles timeline.title model.timelines
-    }
-  , Task.perform NewTime Time.now
-  )
-
-
-updateServiceArticles : List Article -> Service -> Service
-updateServiceArticles articles service =
-  { service | articles = Dict.union (listToDict articles) service.articles }
-
-
-listToDict : List Article -> Article.Collection
-listToDict articles =
-  Dict.fromList
-    <| List.map (\article -> (article.id, article)) articles
 
 
 updateTimelineArticles : List String -> String -> List Timeline -> List Timeline
@@ -324,24 +324,7 @@ viewSidebarMenu model sidebarMenu =
 viewServiceMenu : Model -> Html Msg
 viewServiceMenu model =
   div [ class "sidebarMenu" ]
-    <| List.map viewServiceSettings (Dict.values model.services)
-
-
-viewServiceSettings : Service -> Html Msg
-viewServiceSettings service =
-  div [ class "box" ]
-    ( (text service.name) ::
-      (List.map viewEndpointStatus (Dict.values service.endpoints))
-    )
-
-
-viewEndpointStatus : Endpoint -> Html Msg
-viewEndpointStatus endpoint =
-  div []
-    [ p [] [ text endpoint.name ]
-    , progress [ class "progress", class "is-primary" ] [ span [] [ text "0/0" ] ]
-    , p [] [ text ("Reset: " ++ (String.fromInt 0))]
-    ]
+    <| List.map Service.viewServiceSettings (Dict.values model.services)
 
 
 viewIcon : String -> String -> String -> Html Msg
@@ -389,20 +372,6 @@ viewMaybe maybeElement =
 -- HTTP
 
 
-type alias EndpointPayload =
-  { articles: List Article
-  , timelineArticles: List String
-  , rateLimit: RateLimitInfo
-  }
-
-
-type alias RateLimitInfo =
-  { remaining: Int
-  , limit: Int
-  , reset: Int
-  }
-
-
 postLike : Service -> Article -> Cmd Msg
 postLike service article =
   case article.social of
@@ -436,7 +405,7 @@ getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
   Http.get
     { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (endpoint.options ++ (dictToQueries timeline.options))
-    , expect = Http.expectJson (GotEndpointPayload service timeline) Tweet.payloadResponseDecoder
+    , expect = Http.expectJson (GotPayload service endpoint timeline) Tweet.payloadResponseDecoder
     }
 
 
