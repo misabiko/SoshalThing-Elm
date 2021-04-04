@@ -4,6 +4,7 @@ const TwitterV2 = require('twitter-v2');
 const TwitterV1 = require('twitter-lite');
 const credentials = require('../../credentials.json');
 const favicon = require('serve-favicon');
+const morgan = require('morgan');
 
 const clientV2 = new TwitterV2({
 	consumer_key: credentials.consumer_key,
@@ -25,6 +26,7 @@ const icoPath = path.join('dist', 'favicon.ico');
 
 app.use(express.static('dist'));
 app.use(favicon(icoPath));
+app.use(morgan('dev'));
 app.use('/main.js', express.static(path.join(__dirname, 'index.js')));
 app.use('/style.css', express.static(path.join(__dirname, 'style.css')));
 
@@ -33,71 +35,38 @@ app.use(function (err, req, res, _next) {
 	res.status(500).send('Something broke!')
 })
 
-const twitterRouter = express.Router();
+function parseQueryErrors(e, next) {
+	if ('errors' in e) {
+		for (const error of e.errors)
+			console.error(error);
+	} else
+		console.error(e);
 
-twitterRouter.get('/home_timeline', async (req, res) => {
-	const response = await clientV1.get('statuses/home_timeline', {
-		tweet_mode: 'extended',
-		...(req.query),
+	next(e);
+}
+
+app.route('/twitter/v1/:endpoint1/:endpoint2')
+	.get(async (req, res, next) => {
+		try {
+			const response = await clientV1.get(`${req.params.endpoint1}/${req.params.endpoint2}`, {
+				...(req.query),
+			});
+
+			res.json(response);
+		} catch (e) {
+			parseQueryErrors(e, next);
+		}
+	})
+	.post(async (req, res, next) => {
+		try {
+			const response = await clientV1.post(`${req.params.endpoint1}/${req.params.endpoint2}`, {
+				...(req.query),
+			});
+
+			res.json(response);
+		} catch (e) {
+			parseQueryErrors(e, next);
+		}
 	});
-
-	res.json(response);
-});
-
-twitterRouter.get('/user_timeline', async (req, res) => {
-	const response = await clientV1.get('statuses/user_timeline', {
-		tweet_mode: 'extended',
-		...(req.query),
-	});
-
-	res.json(response);
-});
-
-twitterRouter.get('/list', async (req, res) => {
-	const response = await clientV1.get('lists/statuses', {
-		tweet_mode: 'extended',
-		...(req.query),
-	});
-
-	res.json(response);
-});
-
-twitterRouter.get('/search', async (req, res) => {
-	const response = await clientV1.get('search/tweets', {
-		tweet_mode: 'extended',
-		...(req.query),
-	});
-
-	res.json(response);
-});
-
-twitterRouter.post('/like/:id', async (req, res) => {
-	const response = await clientV1.post('favorites/create', {
-		id: req.params.id,
-		tweet_mode: 'extended',
-	});
-
-	res.json(response);
-});
-
-twitterRouter.post('/unlike/:id', async (req, res) => {
-	const response = await clientV1.post('favorites/destroy', {
-		id: req.params.id,
-		tweet_mode: 'extended',
-	});
-
-	res.json(response);
-});
-
-twitterRouter.post('/retweet/:id', async (req, res) => {
-	const response = await clientV1.post('statuses/retweet', {
-		id: req.params.id,
-		tweet_mode: 'extended',
-	});
-
-	res.json(response);
-});
-
-app.use('/twitter', twitterRouter);
 
 app.listen(port, () => console.log(`Listening at http://localhost:${port}`))

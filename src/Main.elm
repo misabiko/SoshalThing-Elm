@@ -44,6 +44,7 @@ type alias Endpoint =
   { name: String
   , baseUrl: String
   , path: List String
+  , options: List UrlB.QueryParameter
   }
 
 
@@ -106,12 +107,23 @@ initTwitter =
   ( "Twitter"
   , { name = "Twitter"
     , endpoints = Dict.fromList
-        [ ( "Home Timeline", { name = "Home Timeline", baseUrl = "http://localhost:5000", path = [ "twitter", "home_timeline" ] } )
-        , ( "User Timeline", { name = "User Timeline", baseUrl = "http://localhost:5000", path = [ "twitter", "user_timeline" ] } )
-        , ( "Search", { name = "Search", baseUrl = "http://localhost:5000", path = [ "twitter", "search" ] } )
-        , ( "List", { name = "List", baseUrl = "http://localhost:5000", path = [ "twitter", "list" ] } )
+        [ initTwitterEndpoint "Home Timeline" [ "statuses", "home_timeline" ]
+        , initTwitterEndpoint "User Timeline" [ "statuses", "user_timeline" ]
+        , initTwitterEndpoint "Search" [ "search", "tweets" ]
+        , initTwitterEndpoint "List" [ "lists", "statuses" ]
         ]
     , articles = Dict.empty
+    }
+  )
+
+
+initTwitterEndpoint : String -> List String -> (String, Endpoint)
+initTwitterEndpoint name path =
+  ( name
+  , { name = name
+    , baseUrl = "http://localhost:5000"
+    , path = [ "twitter", "v1" ] ++ path
+    , options = [UrlB.string "tweet_mode" "extended"]
     }
   )
 
@@ -320,7 +332,7 @@ postLike service article =
   case article.social of
     Just social ->
       Http.post
-        { url = "http://localhost:5000/twitter/" ++ (if social.liked then "unlike/" else "like/") ++ article.id
+        { url = UrlB.crossOrigin "http://localhost:5000" ["twitter", "v1", "favorites", if social.liked then "destroy" else "create"] [UrlB.string "id" article.id, UrlB.string "tweet_mode" "extended"]
         , body = Http.emptyBody
         , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
         }
@@ -336,7 +348,7 @@ postRetweet service article =
         Cmd.none
       else
         Http.post
-          { url = "http://localhost:5000/twitter/retweet/" ++ article.id
+          { url = UrlB.crossOrigin "http://localhost:5000" ["twitter", "v1", "statuses", "retweet"] [UrlB.string "id" article.id, UrlB.string "tweet_mode" "extended"]
           , body = Http.emptyBody
           , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
           }
@@ -347,7 +359,7 @@ postRetweet service article =
 getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
   Http.get
-    { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (dictToQueries timeline.options)
+    { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (endpoint.options ++ (dictToQueries timeline.options))
     , expect = Http.expectJson (GotEndpointPayload service timeline) Tweet.payloadResponseDecoder
     }
 
