@@ -6,7 +6,6 @@ module Service exposing
   )
 
 import Html exposing (..)
-import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Html.Lazy exposing (..)
 import Dict exposing (Dict)

@@ -4,12 +4,11 @@ import Html exposing (..)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Html.Lazy exposing (..)
-import Html.Keyed
-import Dict
 import Time
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
 import Json.Decode.Extra as DecodeE
+import Maybe.Extra as MaybeE
 
 import Article exposing (Article, SocialData, ImageData, ShareableArticle)
 import Service exposing (Payload(..), RateLimitInfo)
@@ -86,13 +85,15 @@ viewTweetButtons likeMsg repostMsg service article social =
             , classList [("repostedPostButton", social.reposted)]
             , onClick (repostMsg service article)
             ]
-            ([ viewIcon "fa-retweet" "fas" "" ]
-            ++ (viewMaybe (
-              if social.repostCount > 0 then
-                Just (span [] [ text (String.fromInt social.repostCount) ])
-              else
-                Nothing
-            )))
+            (maybeJoinR
+              (viewIcon "fa-retweet" "fas" "")
+              (
+                if social.repostCount > 0 then
+                  Just (span [] [ text (String.fromInt social.repostCount) ])
+                else
+                  Nothing
+              )
+            )
 
         , a [ class "level-item"
             , class "articleButton"
@@ -100,13 +101,15 @@ viewTweetButtons likeMsg repostMsg service article social =
             , classList [("likedPostButton", social.liked)]
             , onClick (likeMsg service article)
             ]
-            ([ viewIcon "fa-heart" (if social.liked then "fas" else "far") "" ]
-            ++ (viewMaybe (
-              if social.likeCount > 0 then
-                Just (span [ ] [ text (String.fromInt social.likeCount) ])
-              else
-                Nothing
-            )))
+            (consr
+              [ viewIcon "fa-heart" (if social.liked then "fas" else "far") "" ]
+              (
+                if social.likeCount > 0 then
+                  Just (span [ ] [ text (String.fromInt social.likeCount) ])
+                else
+                  Nothing
+              )
+            )
 
         , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
             [ viewIcon "fa-ellipsis-h" "fas" "" ]
@@ -114,13 +117,34 @@ viewTweetButtons likeMsg repostMsg service article social =
     ]
 
 
-viewMaybe : Maybe (Html msg) -> List (Html msg)
-viewMaybe maybeElement =
-  case maybeElement of
-    Just element ->
-      [element]
-    Nothing ->
-      []
+consr : List a -> Maybe a -> List a
+consr list item =
+    case item of
+        Just v ->
+             list ++ [v]
+
+        Nothing ->
+            list
+
+
+maybeJoin : Maybe a -> a -> List a
+maybeJoin item el =
+    case item of
+        Just v ->
+            [v, el]
+
+        Nothing ->
+          [el]
+
+
+maybeJoinR : a -> Maybe a -> List a
+maybeJoinR el item =
+    case item of
+        Just v ->
+             [el, v]
+
+        Nothing ->
+          [el]
 
 
 viewTweetSkeleton : Like service msg -> Repost service msg -> TimeModel -> TweetSkeletonParts msg -> service -> Article -> Html msg
@@ -128,24 +152,30 @@ viewTweetSkeleton likeMsg repostMsg timeModel parts service article =
   case ((article.text, article.social)) of
     (Just textStr, Just social) ->
       Html.article [ class "article" ]
-        ((viewMaybe parts.superHeader)
-        ++ [ div [ class "media" ]
-          [ figure [ class "media-left" ]
-            [ p [ class "image", class "is-64x64" ]
-              [ img [ alt (social.authorHandle ++ "'s avatar"), src social.authorAvatar ] [] ]
-            ]
-          , div [ class "media-content" ]
-              ( [ div [ class "content" ]
-                  [ (lazy3 viewTweetHeader timeModel article social)
-                  , div [ class "tweet-paragraph" ] [ text textStr ]
+        (consr
+          (MaybeE.cons
+            parts.superHeader
+            [ div [ class "media" ]
+              [ figure [ class "media-left" ]
+                [ p [ class "image", class "is-64x64" ]
+                  [ img [ alt (social.authorHandle ++ "'s avatar"), src social.authorAvatar ] [] ]
+                ]
+              , div [ class "media-content" ]
+                  ( [ div [ class "content" ]
+                      [ (lazy3 viewTweetHeader timeModel article social)
+                      , div [ class "tweet-paragraph" ] [ text textStr ]
+                      ]
                   ]
+                  ++
+                  (MaybeE.cons
+                    parts.extra
+                    [viewTweetButtons likeMsg repostMsg service article social]
+                  )
+                  )
               ]
-              ++ (viewMaybe parts.extra)
-              ++ [viewTweetButtons likeMsg repostMsg service article social]
-              )
-          ]
-        ]
-        ++ (viewMaybe parts.footer)
+            ]
+          )
+          parts.footer
         )
 
     _ ->
@@ -156,7 +186,7 @@ viewTweetSkeleton likeMsg repostMsg timeModel parts service article =
 getTweetType : ShareableArticle -> TweetType
 getTweetType shareableArticle =
   case shareableArticle.sharedArticle of
-    Just shared ->
+    Just _ ->
       case shareableArticle.article.text of
         Just _ -> Quote
         Nothing -> Retweet
@@ -208,7 +238,7 @@ getTweetSuperHeader shareableArticle =
   case shareableArticle.sharedArticle of
     Just _ ->
       case shareableArticle.article.text of
-        Just quoteText ->
+        Just _ ->
           Nothing
         Nothing ->
           Just (getRetweetSuperHeader shareableArticle.article)
@@ -233,7 +263,7 @@ getTweetExtra timeModel shareableArticle =
   case shareableArticle.sharedArticle of
     Just shared ->
       case shareableArticle.article.text of
-        Just quoteText ->
+        Just _ ->
           Just (getQuoteExtra timeModel shared)
         Nothing ->
           Nothing
@@ -361,11 +391,6 @@ topTweetDecoder =
     |> DecodeP.custom (Decode.maybe socialDecoder)
     |> DecodeP.custom (Decode.maybe shareDecoder)
     |> DecodeP.custom (Decode.maybe imagesDecoder)
-
-
-maybeListCollapse : List (Maybe a) -> List a
-maybeListCollapse maybes =
-  List.filterMap (\maybeElement -> maybeElement) maybes
 
 
 socialDecoder : Decoder SocialData

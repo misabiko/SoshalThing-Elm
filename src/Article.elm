@@ -52,9 +52,9 @@ type alias ShareableArticle =
 getShareableArticles : Collection -> List String -> List ShareableArticle
 getShareableArticles articles ids =
   List.filterMap
-    (\id -> 
-      case (Dict.get id articles) of
-        Just article ->
+    (\id ->
+      Dict.get id articles
+        |> Maybe.andThen (\article ->
           case article.share of
             Just sharedId ->
               case (Dict.get sharedId articles) of
@@ -70,8 +70,7 @@ getShareableArticles articles ids =
 
             Nothing ->
               Just (ShareableArticle article Nothing)
-
-        Nothing -> Nothing
+        )
     )
     ids
 

@@ -15,7 +15,6 @@ import Maybe.Extra
 
 import Article exposing (Article, ShareableArticle)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
-import TimeParser
 import Tweet
 import Filter exposing (..)
 
@@ -233,7 +232,7 @@ update msg model =
           case payloadResult of
             Ok payload ->
               case payload of
-                FreePayload articles timelineArticles ->
+                FreePayload articles _ ->
                   ( { model | services =
                       Dict.insert
                         service.name
@@ -243,7 +242,7 @@ update msg model =
                   , Task.perform NewTime Time.now
                   )
 
-                RateLimitedPayload articles timelineArticles rateLimit ->
+                RateLimitedPayload articles _ _ ->
                   ( { model | services =
                       Dict.insert
                         service.name
@@ -271,11 +270,10 @@ update msg model =
       (model
       , Cmd.batch
           (List.filterMap (\timeline ->
-            case (getTimelineServiceEndpoint model.services timeline) of
-              Just (service, endpoint) ->
+            getTimelineServiceEndpoint model.services timeline
+              |> Maybe.andThen (\(service, endpoint) ->
                 Just (getEndpoint service endpoint timeline)
-
-              Nothing -> Nothing
+              )
           ) model.timelines)
       )
 
@@ -443,15 +441,6 @@ viewIcon : String -> String -> String -> Html Msg
 viewIcon icon iconType size =
   span [ class "icon" ]
     [ i [ class iconType, class icon, class size ] [] ]
-
-
-viewMaybe : Maybe (Html Msg) -> List (Html Msg)
-viewMaybe maybeElement =
-  case maybeElement of
-    Just element ->
-      [element]
-    Nothing ->
-      []
 
 
 -- HTTP

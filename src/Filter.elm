@@ -48,7 +48,7 @@ passFilterArticle filter shareableArticle =
 
     IsRepost ->
       case shareableArticle.sharedArticle of
-        Just sharedArticle ->
+        Just _ ->
           Maybe.Extra.isNothing shareableArticle.article.text
         Nothing ->
           False

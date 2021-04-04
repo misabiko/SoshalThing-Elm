@@ -10,6 +10,16 @@ import Set
 -- PARSING
 
 
+type alias ParsedTweetTime =
+  { month: Month
+  , day: Int
+  , hour: Int
+  , minute: Int
+  , second: Int
+  , year: Int
+  }
+
+
 tweetTimeDecoder : String -> Json.Decode.Decoder Posix
 tweetTimeDecoder timeString =
   case (run tweetTimeParser timeString) of
@@ -58,21 +68,13 @@ deadEndToString deadEnd =
       "Problem: " ++ str
     BadRepeat ->
       "BadRepeat")
-  ++ " at ["
-  ++ (String.fromInt deadEnd.row)
-  ++ ", "
-  ++ (String.fromInt deadEnd.col)
-  ++ "]"
-
-
-type alias ParsedTweetTime =
-  { month: Month
-  , day: Int
-  , hour: Int
-  , minute: Int
-  , second: Int
-  , year: Int
-  }
+  ++ String.concat 
+    [ " at ["
+    , (String.fromInt deadEnd.row)
+    , ", "
+    , (String.fromInt deadEnd.col)
+    , "]"
+    ]
 
 
 parsedTimeToParts : ParsedTweetTime -> TimeE.Parts
