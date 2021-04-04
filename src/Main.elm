@@ -18,6 +18,7 @@ import TimeParser
 import Tweet
 import Url.Builder exposing (crossOrigin)
 import Service
+import Service exposing (isReady)
 
 
 -- MAIN
@@ -343,13 +344,18 @@ viewTimeline model timeline =
       case (Dict.get timeline.endpointName service.endpoints) of
         Nothing ->
           text (Debug.log (timeline.title ++ " Error") "Couldn't find endpoint.")
-        
+
         Just endpoint ->
+          let
+            endpointReady = isReady endpoint
+          in
           div [ class "timeline" ]
-            [ div [ class "timelineHeader" ]
+            [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
               [ strong [] [ text timeline.title ]
               , div [ class "timelineButtons" ]
-                  [ button [ onClick (Refresh service endpoint timeline) ] [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
+                  [ button
+                      (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
+                      [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
               ]
             , viewContainer model.time service (Article.getShareableArticles service.articles timeline.articleIds)
             ]

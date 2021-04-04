@@ -1,5 +1,6 @@
 module Service exposing
-  ( Service, Endpoint, Payload(..)
+  ( Service, Endpoint, isReady
+  , Payload(..)
   , RateLimitInfo, initRateLimit
   , viewServiceSettings
   )
@@ -52,6 +53,15 @@ initRateLimit limit reset =
   , limit = limit
   , reset = reset
   }
+
+
+isReady : Endpoint -> Bool
+isReady endpoint =
+  case endpoint.rateLimit of
+    Just rateLimit ->
+      rateLimit.remaining > 0
+
+    Nothing -> True
 
 
 -- VIEW
