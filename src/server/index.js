@@ -37,7 +37,35 @@ const twitterRouter = express.Router();
 
 twitterRouter.get('/home_timeline', async (req, res) => {
 	const response = await clientV1.get('statuses/home_timeline', {
-		tweet_mode: 'extended'
+		tweet_mode: 'extended',
+		...(req.query),
+	});
+
+	res.json(response);
+});
+
+twitterRouter.get('/user_timeline', async (req, res) => {
+	const response = await clientV1.get('statuses/user_timeline', {
+		tweet_mode: 'extended',
+		...(req.query),
+	});
+
+	res.json(response);
+});
+
+twitterRouter.get('/list', async (req, res) => {
+	const response = await clientV1.get('lists/statuses', {
+		tweet_mode: 'extended',
+		...(req.query),
+	});
+
+	res.json(response);
+});
+
+twitterRouter.get('/search', async (req, res) => {
+	const response = await clientV1.get('search/tweets', {
+		tweet_mode: 'extended',
+		...(req.query),
 	});
 
 	res.json(response);
