@@ -45,7 +45,16 @@ type alias Timeline =
   , articleIds: List String
   , options: Dict String String
   , interval: Maybe Int
+  , filters: List (Filter, FilterMode)
   }
+
+
+type Filter
+  = IsRepost
+  | HasMedia
+
+
+type FilterMode = ExcludeIf | ExcludeIfNot
 
 
 type alias TimeModel =
@@ -73,14 +82,8 @@ type alias Model =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-  ( { services =  Dict.fromList
-        [ initTwitter ]
-    , timelines =
-      [ initTimeline "Twitter" "Home Timeline" "Home" Dict.empty (Just 64285)
-      , initTimeline "Twitter" "List" "Art" (Dict.fromList [ ("slug", "Art"), ("owner_screen_name", "misabiko") ]) (Just 9000)
-      , initTimeline "Twitter" "Search" "1draw" (Dict.fromList [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き"), ("result_type", "recent") ])  (Just 9000)
-      , initTimeline "Twitter" "User Timeline" "User" Dict.empty (Just 9000)
-      ]
+  ( { services =  Dict.fromList [ initTwitter ]
+    , timelines = initTimelines
     , time =
         { zone = Time.utc
         , lastNow = Time.millisToPosix 0
@@ -95,15 +98,49 @@ init _ =
   )
 
 
-initTimeline : String -> String -> String -> Dict String String -> Maybe Int -> Timeline
-initTimeline serviceName endpointName title options interval =
-  { title = title
-  , serviceName = serviceName
-  , endpointName = endpointName
-  , articleIds = []
-  , options = options
-  , interval = interval
-  }
+initTimelines : List Timeline
+initTimelines =
+  [ { title = "Home"
+    , serviceName = "Twitter"
+    , endpointName = "Home Timeline"
+    , articleIds = []
+    , options = Dict.empty
+    , interval = Just 64285
+    , filters = []
+    }
+  , { title = "Art"
+    , serviceName = "Twitter"
+    , endpointName = "List"
+    , articleIds = []
+    , options =
+        Dict.fromList
+          [ ("slug", "Art")
+          , ("owner_screen_name", "misabiko")
+          ]
+    , interval = Just 9000
+    , filters = []
+    }
+  , { title = "1draw"
+    , serviceName = "Twitter"
+    , endpointName = "Search"
+    , articleIds = []
+    , options =
+        Dict.fromList
+          [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き")
+          , ("result_type", "recent")
+          ]
+    , interval = Just 9000
+    , filters = []
+    }
+  , { title = "User"
+    , serviceName = "Twitter"
+    , endpointName = "User Timeline"
+    , articleIds = []
+    , options = Dict.empty
+    , interval = Just 9000
+    , filters = []
+    }
+  ]
 
 
 initTwitter : (String, Service)
