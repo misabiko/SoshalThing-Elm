@@ -1,12 +1,13 @@
 module Article exposing
     ( Article, Id, Collection, listToDict
-    , SocialData, ImageData
+    , SocialData, Media(..), ImageData, VideoData
     , ShareableArticle, getShareableArticles, getShareableId
     )
 
 
 import Dict exposing (Dict)
 import Time
+import Html.Attributes exposing (autoplay)
 
 
 type alias Article =
@@ -15,7 +16,7 @@ type alias Article =
   , text: Maybe String
   , social: Maybe SocialData
   , share: Maybe Id
-  , images: Maybe (List ImageData)
+  , media: Maybe (Media)
   }
 
 
@@ -41,6 +42,18 @@ type alias ImageData =
   { url: String
   , compressedUrl: String
   }
+
+
+type alias VideoData =
+  { url: String
+  , compressedUrl: String
+  , autoplay: Bool
+  }
+
+
+type Media
+  = Images (List ImageData)
+  | Video VideoData
 
 
 type alias ShareableArticle =

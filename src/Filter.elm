@@ -3,7 +3,7 @@ module Filter exposing
   , filterArticles
   )
 
-import Maybe.Extra
+import Maybe.Extra as MaybeE
 
 import Article exposing (Article, ShareableArticle)
 
@@ -42,18 +42,13 @@ passFilterArticle filter shareableArticle =
     HasMedia ->
       case shareableArticle.sharedArticle of
         Just sharedArticle ->
-          (hasMedia shareableArticle.article) || (hasMedia sharedArticle)
+          (MaybeE.isJust shareableArticle.article.media) || (MaybeE.isJust sharedArticle.media)
         Nothing ->
-          (hasMedia shareableArticle.article)
+          (MaybeE.isJust shareableArticle.article.media)
 
     IsRepost ->
       case shareableArticle.sharedArticle of
         Just _ ->
-          Maybe.Extra.isNothing shareableArticle.article.text
+          MaybeE.isNothing shareableArticle.article.text
         Nothing ->
           False
-
-
-hasMedia : Article -> Bool
-hasMedia article =
-  not (List.isEmpty (Maybe.withDefault [] article.images))

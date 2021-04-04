@@ -143,23 +143,39 @@ initTwitter =
   ( "Twitter"
   , { name = "Twitter"
     , endpoints = Dict.fromList
-        [ initTwitterEndpoint "Home Timeline" [ "statuses", "home_timeline" ] (Just (Service.initRateLimit 15 (15*60*1000)))
-        , initTwitterEndpoint "User Timeline" [ "statuses", "user_timeline" ] (Just (Service.initRateLimit 900 (15*60*1000)))
-        , initTwitterEndpoint "Search" [ "search", "tweets" ] (Just (Service.initRateLimit 180 (15*60*1000)))
-        , initTwitterEndpoint "List" [ "lists", "statuses" ] (Just (Service.initRateLimit 900 (15*60*1000)))
+        [ initTwitterEndpoint
+            "Home Timeline"
+            [ "statuses", "home_timeline" ]
+            [UrlB.string "count" "200"]
+            (Just (Service.initRateLimit 15 (15*60*1000)))
+        , initTwitterEndpoint
+            "User Timeline"
+            [ "statuses", "user_timeline" ]
+            []
+            (Just (Service.initRateLimit 900 (15*60*1000)))
+        , initTwitterEndpoint
+            "Search"
+            [ "search", "tweets" ]
+            []
+            (Just (Service.initRateLimit 180 (15*60*1000)))
+        , initTwitterEndpoint
+            "List"
+            [ "lists", "statuses" ]
+            []
+            (Just (Service.initRateLimit 900 (15*60*1000)))
         ]
     , articles = Dict.empty
     }
   )
 
 
-initTwitterEndpoint : String -> List String -> Maybe RateLimitInfo -> (String, Endpoint)
-initTwitterEndpoint name path maybeRateLimit =
+initTwitterEndpoint : String -> List String -> List UrlB.QueryParameter -> Maybe RateLimitInfo -> (String, Endpoint)
+initTwitterEndpoint name path options maybeRateLimit =
   ( name
   , { name = name
     , baseUrl = "http://localhost:5000"
     , path = [ "twitter", "v1" ] ++ path
-    , options = [UrlB.string "tweet_mode" "extended"]
+    , options = (UrlB.string "tweet_mode" "extended") :: options
     , rateLimit = maybeRateLimit
     }
   )
@@ -179,6 +195,7 @@ type Msg
   | Repost Service Article
   | HideSidebarMenu
   | ShowSidebarMenu SidebarMenu
+  | DebugArticle Article
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -298,6 +315,12 @@ update msg model =
 
     ShowSidebarMenu menu ->
       ( { model | sidebar = Expanded menu}, Cmd.none )
+
+    DebugArticle article ->
+      let
+        _ = Debug.log "Article" article
+      in
+      (model, Cmd.none)
 
 
 updateTimelineArticles : List String -> String -> List Timeline -> List Timeline
@@ -432,7 +455,7 @@ viewContainer : Service -> TimeModel -> List Filter -> List ShareableArticle -> 
 viewContainer service timeModel filters shareableArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ]
     ( List.map
-        (Tweet.viewKeyedTweet Like Repost timeModel service)
+        (Tweet.viewKeyedTweet Like Repost DebugArticle timeModel service)
         (Filter.filterArticles filters shareableArticles)
     )
 

@@ -10,7 +10,7 @@ import Json.Decode.Pipeline as DecodeP
 import Json.Decode.Extra as DecodeE
 import Maybe.Extra as MaybeE
 
-import Article exposing (Article, SocialData, ImageData, ShareableArticle)
+import Article exposing (Article, SocialData, Media(..), ImageData, VideoData, ShareableArticle)
 import Service exposing (Payload(..), RateLimitInfo)
 import TimeParser
 
@@ -51,9 +51,9 @@ viewIcon icon iconType size =
     [ i [ class iconType, class icon, class size ] [] ]
 
 
-viewKeyedTweet : Like service msg -> Repost service msg -> TimeModel -> service -> ShareableArticle -> (String, Html msg)
-viewKeyedTweet likeMsg repostMsg timeModel service shareableArticle =
-  (Article.getShareableId shareableArticle, lazy2 (viewTweet likeMsg repostMsg service) timeModel shareableArticle)
+viewKeyedTweet : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> service -> ShareableArticle -> (String, Html msg)
+viewKeyedTweet likeMsg repostMsg debugMsg timeModel service shareableArticle =
+  (Article.getShareableId shareableArticle, lazy2 (viewTweet likeMsg repostMsg debugMsg service) timeModel shareableArticle)
 
 
 viewTweetHeader : TimeModel -> Article -> SocialData -> Html msg
@@ -75,8 +75,8 @@ viewTweetHeader timeModel article social =
     ]
 
 
-viewTweetButtons : Like service msg -> Repost service msg -> service -> Article -> SocialData -> Html msg
-viewTweetButtons likeMsg repostMsg service article social =
+viewTweetButtons : Like service msg -> Repost service msg -> (Article -> msg) -> service -> Article -> SocialData -> Html msg
+viewTweetButtons likeMsg repostMsg debugMsg service article social =
   nav [ class "level", class "is-mobile" ]
     [ div [ class "level-left" ]
         [ a [ class "level-item"
@@ -111,7 +111,11 @@ viewTweetButtons likeMsg repostMsg service article social =
               )
             )
 
-        , a [ class "level-item", class "articleButton", class "articleMenuButton" ]
+        , a [ class "level-item"
+            , class "articleButton"
+            , class "articleMenuButton"
+            , onClick (debugMsg article)
+            ]
             [ viewIcon "fa-ellipsis-h" "fas" "" ]
         ]
     ]
@@ -147,11 +151,11 @@ maybeJoinR el item =
           [el]
 
 
-viewTweetSkeleton : Like service msg -> Repost service msg -> TimeModel -> TweetSkeletonParts msg -> service -> Article -> Html msg
-viewTweetSkeleton likeMsg repostMsg timeModel parts service article =
+viewTweetSkeleton : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> TweetSkeletonParts msg -> service -> Article -> Html msg
+viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service article =
   case ((article.text, article.social)) of
     (Just textStr, Just social) ->
-      Html.article [ class "article" ]
+      Html.article [ class "article", attribute "articleId" article.id ]
         (consr
           (MaybeE.cons
             parts.superHeader
@@ -169,7 +173,7 @@ viewTweetSkeleton likeMsg repostMsg timeModel parts service article =
                   ++
                   (MaybeE.cons
                     parts.extra
-                    [viewTweetButtons likeMsg repostMsg service article social]
+                    [viewTweetButtons likeMsg repostMsg debugMsg service article social]
                   )
                   )
               ]
@@ -204,8 +208,8 @@ getActualTweet shareableArticle =
     Nothing -> shareableArticle.article
 
 
-viewTweet : Like service msg -> Repost service msg -> service -> TimeModel -> ShareableArticle -> Html msg
-viewTweet likeMsg repostMsg service timeModel shareableArticle =
+viewTweet : Like service msg -> Repost service msg -> (Article -> msg) -> service -> TimeModel -> ShareableArticle -> Html msg
+viewTweet likeMsg repostMsg debugMsg service timeModel shareableArticle =
   let
     actualTweet = getActualTweet shareableArticle
     parts =
@@ -214,7 +218,7 @@ viewTweet likeMsg repostMsg service timeModel shareableArticle =
       , footer = getTweetFooter shareableArticle
       }
   in
-    viewTweetSkeleton likeMsg repostMsg timeModel parts service actualTweet
+    viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service actualTweet
 
 
 getRetweetSuperHeader : Article -> Html msg
@@ -264,30 +268,39 @@ getTweetExtra timeModel shareableArticle =
     Just shared ->
       case shareableArticle.article.text of
         Just _ ->
-          Just (getQuoteExtra timeModel shared)
+          Just (lazy2 getQuoteExtra timeModel shared)
         Nothing ->
           Nothing
     Nothing -> Nothing
 
 
-getMediaFooter : List ImageData -> Html msg
-getMediaFooter images =
-  div [ class "postImages", class "postMedia" ]
-    (List.map (\imageData ->
-      div [ class "mediaHolder" ]
-        [ div [ class "is-hidden", class "imgPlaceholder" ] []
-        , img [ src imageData.url ] []
-        ]
-    ) images)
+getMediaFooter : Media -> Html msg
+getMediaFooter media =
+  case media of
+    Images imageDatas ->
+      div [ class "postImages", class "postMedia" ]
+        (List.map (\imageData ->
+          div [ class "mediaHolder" ]
+            [ div [ class "is-hidden", class "imgPlaceholder" ] []
+            , img [ src imageData.url ] []
+            ]
+        ) imageDatas)
+
+    Video videoData ->
+      div [ class "postVideo", class "postMedia" ]
+      [ div [ class "mediaHolder" ]
+          [ div [ class "is-hidden", class "imgPlaceholder" ] []
+          , video [ controls True, autoplay videoData.autoplay, loop videoData.autoplay ]
+              [ source [ src videoData.url ] [] ]
+          ]
+      ]
 
 
 getTweetFooter : ShareableArticle -> Maybe (Html msg)
 getTweetFooter shareableArticle =
-  case (getActualTweet shareableArticle).images of
-    Just images ->
-      Just (getMediaFooter images)
-
-    Nothing -> Nothing
+  Maybe.andThen
+    (\media -> Just (lazy getMediaFooter media))
+    (getActualTweet shareableArticle).media
 
 
 -- DECODE
@@ -366,14 +379,21 @@ tweetDecoder =
 
 fixTweetText : Article -> Article
 fixTweetText article =
-  case (article.text, article.images) of
-    (Just textStr, Just images) ->
+  case (article.text, article.media) of
+    (Just textStr, Just media) ->
       {article | text =
-        List.foldl (\image foldedText ->
-          String.replace image.compressedUrl "" foldedText
-        ) textStr images
-        |> String.trimRight
-        |> Just
+        case media of
+          Images imageDatas ->
+            List.foldl (\imageData foldedText ->
+              String.replace imageData.compressedUrl "" foldedText
+            ) textStr imageDatas
+            |> String.trimRight
+            |> Just
+
+          Video videoData ->
+            String.replace videoData.compressedUrl "" textStr
+            |> String.trimRight
+            |> Just
       }
 
     _ -> article
@@ -390,7 +410,7 @@ topTweetDecoder =
     |> DecodeP.custom (Decode.maybe textDecoder)
     |> DecodeP.custom (Decode.maybe socialDecoder)
     |> DecodeP.custom (Decode.maybe shareDecoder)
-    |> DecodeP.custom (Decode.maybe imagesDecoder)
+    |> DecodeP.custom (Decode.maybe mediaDecoder)
 
 
 socialDecoder : Decoder SocialData
@@ -432,23 +452,64 @@ textDecoder =
     (Decode.maybe (Decode.at ["retweeted_status", "id_str"] Decode.string))
 
 
-imagesDecoder : Decoder (List ImageData)
-imagesDecoder =
-  Decode.oneOf
-    [ Decode.at ["extended_entities", "media"] tweetMediaDecoder
-    , Decode.at ["entities", "media"] tweetMediaDecoder
-    ]
+mediaDecoder : Decoder Media
+mediaDecoder =
+  let
+    decoder =
+      Decode.andThen
+        (\maybeMediaType ->
+          case maybeMediaType of
+            Just mediaType ->
+              case mediaType of
+                "photo" -> imageDecoder
+
+                "video" -> videoDecoder False
+
+                "animated_gif" -> videoDecoder True
+
+                _ -> Decode.fail ("Media type '" ++ mediaType ++ "' not handled.")
+
+            Nothing -> Decode.fail "No media found."
+        )
+      (Decode.map List.head (Decode.list (field "type" Decode.string)))
+  in
+    Decode.oneOf
+      [ Decode.at ["extended_entities", "media"] decoder
+      , Decode.at ["entities", "media"] decoder
+      ]
 
 
-tweetMediaDecoder : Decoder (List ImageData)
-tweetMediaDecoder =
-  (Decode.list
-    (Decode.succeed ImageData
-      |> DecodeP.required "media_url_https" Decode.string
-      |> DecodeP.required "url" Decode.string
+imageDecoder : Decoder Media
+imageDecoder =
+  Decode.map Images
+    (Decode.list
+      (Decode.map2 ImageData
+        (field "media_url_https" Decode.string)
+        (field "url" Decode.string)
+      )
     )
-  )
 
+
+videoDecoder : Bool -> Decoder Media
+videoDecoder autoplay =
+  Decode.andThen
+    (\maybeVideo -> DecodeE.fromMaybe "Didn't find a video"  maybeVideo)
+  (Decode.map List.head
+    (Decode.list
+      (Decode.map Video
+        (Decode.map3 VideoData
+          (Decode.at ["video_info", "variants"]
+            (
+              Decode.andThen
+                (\maybeVariant ->
+                  (DecodeE.fromMaybe "Didn't find a video_info variant" maybeVariant)
+                )
+                (Decode.map List.head (Decode.list (field "url" Decode.string)))
+            )
+          )
+          (field "url" Decode.string)
+          (Decode.succeed autoplay)
+    ))))
 
 payloadErrorsDecoder : Decoder (List (String, Int))
 payloadErrorsDecoder =
