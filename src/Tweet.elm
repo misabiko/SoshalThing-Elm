@@ -54,7 +54,7 @@ viewIcon icon iconType size =
 
 viewKeyedTweet : Like service msg -> Repost service msg -> TimeModel -> service -> ShareableArticle -> (String, Html msg)
 viewKeyedTweet likeMsg repostMsg timeModel service shareableArticle =
-  (Article.getShareableId shareableArticle, lazy5 viewTweet likeMsg repostMsg timeModel service shareableArticle)
+  (Article.getShareableId shareableArticle, lazy2 (viewTweet likeMsg repostMsg service) timeModel shareableArticle)
 
 
 viewTweetHeader : TimeModel -> Article -> SocialData -> Html msg
@@ -136,7 +136,7 @@ viewTweetSkeleton likeMsg repostMsg timeModel parts service article =
             ]
           , div [ class "media-content" ]
               ( [ div [ class "content" ]
-                  [ (viewTweetHeader timeModel article social)
+                  [ (lazy3 viewTweetHeader timeModel article social)
                   , div [ class "tweet-paragraph" ] [ text textStr ]
                   ]
               ]
@@ -174,8 +174,8 @@ getActualTweet shareableArticle =
     Nothing -> shareableArticle.article
 
 
-viewTweet : Like service msg -> Repost service msg -> TimeModel -> service -> ShareableArticle -> Html msg
-viewTweet likeMsg repostMsg timeModel service shareableArticle =
+viewTweet : Like service msg -> Repost service msg -> service -> TimeModel -> ShareableArticle -> Html msg
+viewTweet likeMsg repostMsg service timeModel shareableArticle =
   let
     actualTweet = getActualTweet shareableArticle
     parts =

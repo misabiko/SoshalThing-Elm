@@ -367,7 +367,7 @@ viewServiceMenu services =
 
 viewTimelineContainer : Model -> Html Msg
 viewTimelineContainer model =
-  (div [ id "timelineContainer" ] (List.map (lazy (viewTimeline model)) model.timelines))
+  (div [ id "timelineContainer" ] (List.map (viewTimeline model) model.timelines))
 
 
 viewTimeline : Model -> Timeline -> Html Msg
@@ -380,20 +380,20 @@ viewTimeline model timeline =
       let
         endpointReady = isReady endpoint
       in
-      div [ class "timeline" ]
-        [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
-          [ strong [] [ text timeline.title ]
-          , div [ class "timelineButtons" ]
-              [ button
-                  (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
-                  [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
+        div [ class "timeline" ]
+          [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
+            [ strong [] [ text timeline.title ]
+            , div [ class "timelineButtons" ]
+                [ button
+                    (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
+                    [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
+            ]
+          , lazy2 (viewContainer service) model.time (Article.getShareableArticles service.articles timeline.articleIds)
           ]
-        , viewContainer model.time service (Article.getShareableArticles service.articles timeline.articleIds)
-        ]
 
 
-viewContainer : TimeModel -> Service -> List ShareableArticle -> Html Msg
-viewContainer timeModel service shareableArticles =
+viewContainer : Service -> TimeModel -> List ShareableArticle -> Html Msg
+viewContainer service timeModel shareableArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (Tweet.viewKeyedTweet Like Repost timeModel service) shareableArticles)
 
 viewIcon : String -> String -> String -> Html Msg
