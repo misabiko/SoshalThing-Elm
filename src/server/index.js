@@ -69,4 +69,20 @@ app.route('/twitter/v1/:endpoint1/:endpoint2')
 		}
 	});
 
+if (process.platform === "win32") {
+	var rl = require("readline").createInterface({
+		input: process.stdin,
+		output: process.stdout
+	});
+
+	rl.on("SIGINT", function () {
+		process.emit("SIGINT");
+	});
+}
+
+process.on("SIGINT", function () {
+	//graceful shutdown
+	process.exit();
+});
+
 app.listen(port, () => console.log(`Listening at http://localhost:${port}`))
