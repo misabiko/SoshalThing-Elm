@@ -17,9 +17,7 @@ import Article exposing (Article, ShareableArticle)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import TimeParser
 import Tweet
-import Url.Builder exposing (crossOrigin)
-import Service
-import Service exposing (isReady)
+import Filter exposing (..)
 
 
 -- MAIN
@@ -45,16 +43,8 @@ type alias Timeline =
   , articleIds: List String
   , options: Dict String String
   , interval: Maybe Int
-  , filters: List (Filter, FilterMode)
+  , filters: List Filter
   }
-
-
-type Filter
-  = IsRepost
-  | HasMedia
-
-
-type FilterMode = ExcludeIf | ExcludeIfNot
 
 
 type alias TimeModel =
@@ -118,7 +108,10 @@ initTimelines =
           , ("owner_screen_name", "misabiko")
           ]
     , interval = Just 9000
-    , filters = []
+    , filters =
+        [ (HasMedia, ExcludeIfNot)
+        , (IsRepost, ExcludeIf)
+        ]
     }
   , { title = "1draw"
     , serviceName = "Twitter"
@@ -130,7 +123,10 @@ initTimelines =
           , ("result_type", "recent")
           ]
     , interval = Just 9000
-    , filters = []
+    , filters =
+        [ (HasMedia, ExcludeIfNot)
+        , (IsRepost, ExcludeIf)
+        ]
     }
   , { title = "User"
     , serviceName = "Twitter"
@@ -420,7 +416,7 @@ viewTimeline model timeline =
     
     Just (service, endpoint) ->
       let
-        endpointReady = isReady endpoint
+        endpointReady = Service.isReady endpoint
       in
         div [ class "timeline" ]
           [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
@@ -430,13 +426,18 @@ viewTimeline model timeline =
                     (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
                     [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
             ]
-          , lazy2 (viewContainer service) model.time (Article.getShareableArticles service.articles timeline.articleIds)
+          , lazy3 (viewContainer service) model.time timeline.filters (Article.getShareableArticles service.articles timeline.articleIds)
           ]
 
 
-viewContainer : Service -> TimeModel -> List ShareableArticle -> Html Msg
-viewContainer service timeModel shareableArticles =
-  Html.Keyed.node "div" [ class "timelineArticles" ] (List.map (Tweet.viewKeyedTweet Like Repost timeModel service) shareableArticles)
+viewContainer : Service -> TimeModel -> List Filter -> List ShareableArticle -> Html Msg
+viewContainer service timeModel filters shareableArticles =
+  Html.Keyed.node "div" [ class "timelineArticles" ]
+    ( List.map
+        (Tweet.viewKeyedTweet Like Repost timeModel service)
+        (Filter.filterArticles filters shareableArticles)
+    )
+
 
 viewIcon : String -> String -> String -> Html Msg
 viewIcon icon iconType size =
