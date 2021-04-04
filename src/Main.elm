@@ -155,7 +155,8 @@ type Msg
   | NewTime Time.Posix
   | Like Service Article
   | Repost Service Article
-  | ToggleSidebar
+  | HideSidebarMenu
+  | ShowSidebarMenu SidebarMenu
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -223,13 +224,12 @@ update msg model =
     Repost service article ->
       (model, postRetweet service article)
 
-    ToggleSidebar ->
-      case model.sidebar of
-        Collapsed ->
-          ( { model | sidebar = Expanded ServiceMenu}, Cmd.none )
+    HideSidebarMenu ->
+      ( { model | sidebar = Collapsed}, Cmd.none )
 
-        Expanded _ ->
-          ( { model | sidebar = Collapsed}, Cmd.none )
+    ShowSidebarMenu menu ->
+      ( { model | sidebar = Expanded menu}, Cmd.none )
+
 
 updateArticles : Service -> Timeline -> EndpointPayload -> Model -> ( Model, Cmd Msg )
 updateArticles service timeline payload model =
@@ -304,13 +304,13 @@ viewSidebar model =
     <| case model.sidebar of
         Collapsed ->
           [ div [ id "sidebarButtons" ]
-              [ button [ onClick ToggleSidebar ] [ viewIcon "fa-angle-double-right" "fas" "fa-2x" ] ]
+              [ button [ onClick (ShowSidebarMenu ServiceMenu)] [ viewIcon "fa-angle-double-right" "fas" "fa-2x" ] ]
           ]
         
         Expanded menu ->
           [ viewSidebarMenu model menu
           , div [ id "sidebarButtons" ]
-              [ button [ onClick ToggleSidebar ] [ viewIcon "fa-angle-double-left" "fas" "fa-2x" ] ]
+              [ button [ onClick HideSidebarMenu ] [ viewIcon "fa-angle-double-left" "fas" "fa-2x" ] ]
           ]
 
 
@@ -324,7 +324,23 @@ viewSidebarMenu model sidebarMenu =
 viewServiceMenu : Model -> Html Msg
 viewServiceMenu model =
   div [ class "sidebarMenu" ]
-    [ div [ class "box" ] [ text "Twitter" ]
+    <| List.map viewServiceSettings (Dict.values model.services)
+
+
+viewServiceSettings : Service -> Html Msg
+viewServiceSettings service =
+  div [ class "box" ]
+    ( (text service.name) ::
+      (List.map viewEndpointStatus (Dict.values service.endpoints))
+    )
+
+
+viewEndpointStatus : Endpoint -> Html Msg
+viewEndpointStatus endpoint =
+  div []
+    [ p [] [ text endpoint.name ]
+    , progress [ class "progress", class "is-primary" ] [ span [] [ text "0/0" ] ]
+    , p [] [ text ("Reset: " ++ (String.fromInt 0))]
     ]
 
 
