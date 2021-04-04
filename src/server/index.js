@@ -1,17 +1,9 @@
 const express = require('express');
 const path = require('path');
-const TwitterV2 = require('twitter-v2');
 const TwitterV1 = require('twitter-lite');
 const credentials = require('../../credentials.json');
 const favicon = require('serve-favicon');
 const morgan = require('morgan');
-
-const clientV2 = new TwitterV2({
-	consumer_key: credentials.consumer_key,
-	consumer_secret: credentials.consumer_secret,
-	access_token_key: credentials.access_key,
-	access_token_secret: credentials.access_secret,
-});
 
 const clientV1 = new TwitterV1({
 	consumer_key: credentials.consumer_key,
