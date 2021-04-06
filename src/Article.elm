@@ -1,7 +1,6 @@
 module Article exposing
     ( Article, Id, Collection, listToDict
     , SocialData, Media(..), MediaContent(..), ImageData, VideoData
-    , ShareableArticle, getShareableArticles, getShareableId
     )
 
 
@@ -10,22 +9,18 @@ import Time
 import Html.Attributes exposing (autoplay)
 
 
-type alias Article =
-  { id: Id
+type alias Article a =
+  { a
+  | id: Id
   , creationDate: Time.Posix
-  , text: Maybe String
-  , social: Maybe SocialData
-  , share: Maybe Id
-  , media: Maybe Media
-  , index: Maybe Int
   }
 
 
 type alias Id = String
 
 
-type alias Collection =
-  Dict String Article
+type alias Collection a =
+  Dict String (Article a)
 
 
 type alias SocialData =
@@ -66,46 +61,7 @@ type MediaContent
   | Video VideoData
 
 
-type alias ShareableArticle =
-  { article: Article
-  , sharedArticle: Maybe Article
-  }
-
-
-getShareableArticles : Collection -> List Id -> List ShareableArticle
-getShareableArticles articles ids =
-  List.filterMap
-    (\id ->
-      Dict.get id articles
-        |> Maybe.andThen (\article ->
-          case article.share of
-            Just sharedId ->
-              case (Dict.get sharedId articles) of
-                Just sharedArticle ->
-                  Just (ShareableArticle article (Just sharedArticle))
-                
-                Nothing ->
-                  Just (ShareableArticle
-                  article
-                  (Debug.log
-                    ("Couldn't find shared article '" ++ sharedId ++ "'")
-                    Nothing))
-
-            Nothing ->
-              Just (ShareableArticle article Nothing)
-        )
-    )
-    ids
-
-
-getShareableId : ShareableArticle -> String
-getShareableId shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just shared -> shareableArticle.article.id ++ shared.id
-    Nothing -> shareableArticle.article.id
-
-
-listToDict : List Article -> Collection
+listToDict : List (Article a) -> (Collection a)
 listToDict articles =
   Dict.fromList
     <| List.map (\article -> (article.id, article)) articles

@@ -1,5 +1,5 @@
 module Timeline exposing
-    ( Timeline, TimelineArticle, TimelineShareable, timelineArticlesToIds, timelineArticlesToShareable, isCompact, CompactMode(..)
+    ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..)
     , updateTimelineArticles, getTimelineServiceEndpoint
     , timelineRefreshSub, SortMethod(..)
     )
@@ -8,7 +8,7 @@ import Dict exposing (Dict)
 import Time
 import List.Extra as ListE
 
-import Article exposing (Article, ShareableArticle, getShareableArticles)
+import Article exposing (Article)
 import Service exposing (Service, Endpoint)
 import Filter exposing (..)
 
@@ -28,12 +28,6 @@ type alias Timeline =
 
 type alias TimelineArticle =
   { id: Article.Id
-  , compact: SettingOverride CompactMode
-  }
-
-
-type alias TimelineShareable =
-  { shareableArticle: ShareableArticle
   , compact: SettingOverride CompactMode
   }
 
@@ -62,7 +56,7 @@ newTimelineArticle id =
   }
 
 
-isCompact : CompactMode -> TimelineShareable -> Bool
+isCompact : CompactMode -> TimelineArticle -> Bool
 isCompact timelineCompactMode timelineShareable =
   case (timelineShareable.compact) of
     Overrided compactMode ->
@@ -76,7 +70,7 @@ isCompact timelineCompactMode timelineShareable =
         Expand -> False
 
 
-updateTimelineArticles : Article.Collection -> SortMethod -> List Article.Id -> String -> List Timeline -> List Timeline 
+updateTimelineArticles : Article.Collection a -> SortMethod -> List Article.Id -> String -> List Timeline -> List Timeline 
 updateTimelineArticles articles sortMethod articleIds timelineTitle timelines =
   List.map (\timeline -> 
     if timeline.title == timelineTitle then
@@ -101,15 +95,7 @@ timelineArticlesToIds timelineArticles =
   List.map (\article -> article.id) timelineArticles
 
 
-timelineArticlesToShareable : List TimelineArticle -> List ShareableArticle -> List TimelineShareable
-timelineArticlesToShareable timelineArticles shareableArticles =
-  List.map2 (
-    \timelineArticle shareableArticle ->
-      TimelineShareable shareableArticle timelineArticle.compact
-  ) timelineArticles shareableArticles 
-
-
-timelineSortArticles : Article.Collection -> SortMethod -> List TimelineArticle -> List TimelineArticle
+timelineSortArticles : Article.Collection a -> SortMethod -> List TimelineArticle -> List TimelineArticle
 timelineSortArticles articles sortMethod articleIds =
   case sortMethod of
     ById ->
@@ -118,21 +104,22 @@ timelineSortArticles articles sortMethod articleIds =
         |> List.reverse
 
     ByIndex ->
-      List.sortBy (\timelineArticle ->
-          Maybe.withDefault 0
-            (
-              case (Dict.get timelineArticle.id articles) of
-                Just article ->
-                  article.index
+      --List.sortBy (\timelineArticle ->
+      --    Maybe.withDefault 0
+      --      (
+      --        case (Dict.get timelineArticle.id articles) of
+      --          Just article ->
+      --            article.index
 
-                Nothing -> Nothing
-            )
-      ) articleIds
+      --          Nothing -> Nothing
+      --      )
+      --)
+      articleIds
 
     _ -> articleIds
 
 
-getTimelineServiceEndpoint : Dict String Service -> Timeline -> Maybe (Service, Endpoint)
+getTimelineServiceEndpoint : Dict String (Service a) -> Timeline -> Maybe ((Service a), Endpoint)
 getTimelineServiceEndpoint services timeline =
   case (Dict.get timeline.serviceName services) of
     Just service ->
@@ -145,7 +132,7 @@ getTimelineServiceEndpoint services timeline =
     Nothing -> Nothing
 
 
-timelineRefreshSub : (Service -> Endpoint -> Timeline -> msg) -> Dict String Service -> Timeline -> Maybe (Sub msg)
+timelineRefreshSub : ((Service a) -> Endpoint -> Timeline -> msg) -> Dict String (Service a) -> Timeline -> Maybe (Sub msg)
 timelineRefreshSub refreshMsg services timeline =
   case ((getTimelineServiceEndpoint services timeline), timeline.interval) of
     (Just (service, endpoint), Just interval) ->

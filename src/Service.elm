@@ -17,10 +17,10 @@ import Maybe.Extra exposing (unwrap)
 import Parser exposing (end)
 
 
-type alias Service =
+type alias Service a =
   { name: String
   , endpoints: Dict String Endpoint
-  , articles: Article.Collection
+  , articles: Article.Collection a
   }
 
 
@@ -39,12 +39,12 @@ type alias EndpointData =
   }
 
 
-type Payload
+type Payload a
   = FreePayload
-      (List Article)
+      (List (Article a))
       (List Article.Id)
   | RateLimitedPayload
-      (List Article)
+      (List (Article a))
       (List Article.Id)
       RateLimitInfo
 
@@ -98,7 +98,7 @@ updateEndpointRateLimit endpoints endpoint rateLimit =
 -- VIEW
 
 
-viewServiceSettings : Service -> Html msg
+viewServiceSettings : Service a -> Html msg
 viewServiceSettings service =
   div [ class "box" ]
     ( (text service.name) ::
