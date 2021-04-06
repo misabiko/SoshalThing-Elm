@@ -14,6 +14,7 @@ import Article exposing (Article, SocialData, Media(..), ImageData, VideoData, S
 import Service exposing (Payload(..), RateLimitInfo)
 import Timeline exposing (TimelineShareable, isCompact, CompactMode(..))
 import TimeParser
+import Extra exposing (..)
 
 
 type alias TweetSkeletonParts msg =
@@ -120,36 +121,6 @@ viewTweetButtons likeMsg repostMsg debugMsg service article social =
             [ viewIcon "fa-ellipsis-h" "fas" "" ]
         ]
     ]
-
-
-consr : List a -> Maybe a -> List a
-consr list item =
-    case item of
-        Just v ->
-             list ++ [v]
-
-        Nothing ->
-            list
-
-
-maybeJoin : Maybe a -> a -> List a
-maybeJoin item el =
-    case item of
-        Just v ->
-            [v, el]
-
-        Nothing ->
-          [el]
-
-
-maybeJoinR : a -> Maybe a -> List a
-maybeJoinR el item =
-    case item of
-        Just v ->
-             [el, v]
-
-        Nothing ->
-          [el]
 
 
 viewTweetSkeleton : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> TweetSkeletonParts msg -> service -> Article -> Html msg
