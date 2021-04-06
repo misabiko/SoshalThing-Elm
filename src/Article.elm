@@ -2,7 +2,7 @@ module Article exposing
     ( Article, Id
     , Collection, get
     , listToDict
-    , SocialData, Media(..), MediaContent(..), ImageData, VideoData
+    , SocialData, MediaContent(..), ImageData, VideoData
     )
 
 
@@ -24,6 +24,8 @@ type alias Id = String
 type alias Collection a =
   Dict String (Article a)
 
+
+-- EXTENSIONS
 
 type alias SocialData =
   { authorName: String
@@ -50,17 +52,13 @@ type alias VideoData =
   }
 
 
-type Media
-  = ThumbnailOnly ImageData
-  | ReadyToLoad ImageData MediaContent
-  | Loading ImageData MediaContent
-  | FullyLoaded MediaContent
-
-
 type MediaContent
   = Images (List ImageData)
   | Image ImageData
   | Video VideoData
+
+
+-- HELPERS
 
 
 listToDict : List (Article a) -> (Collection a)
