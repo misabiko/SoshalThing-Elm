@@ -170,7 +170,8 @@ initTwitter =
 initTwitterEndpoint : String -> List String -> List UrlB.QueryParameter -> Maybe RateLimitInfo -> (String, Endpoint)
 initTwitterEndpoint name path options maybeRateLimit =
   ( name
-  , { name = name
+  , Service.newEndpoint
+    { name = name
     , baseUrl = "http://localhost:5000"
     , path = [ "twitter", "v1" ] ++ path
     , options = (UrlB.string "tweet_mode" "extended") :: options
@@ -222,7 +223,7 @@ update msg model =
                           Dict.insert service.name
                             { service
                               | articles = Dict.union (Article.listToDict articles) service.articles
-                              , endpoints = Dict.insert endpoint.name { endpoint | rateLimit = Just rateLimit} service.endpoints
+                              , endpoints = Service.updateEndpointRateLimit service.endpoints endpoint rateLimit
                             }
                             model.services
                       , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
@@ -455,8 +456,11 @@ postRetweet service article =
 
 getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
+  let
+    endpointData = Service.unwrapEndpoint endpoint
+  in
   Http.get
-    { url = UrlB.crossOrigin endpoint.baseUrl endpoint.path (endpoint.options ++ (dictToQueries timeline.options))
+    { url = UrlB.crossOrigin endpointData.baseUrl endpointData.path (endpointData.options ++ (dictToQueries timeline.options))
     , expect = Http.expectJson (GotPayload service endpoint timeline) Tweet.payloadResponseDecoder
     }
 

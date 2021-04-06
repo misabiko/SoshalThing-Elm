@@ -1,5 +1,6 @@
 module Service exposing
-  ( Service, Endpoint, isReady
+  ( Service
+  , Endpoint, isReady, newEndpoint, unwrapEndpoint, updateEndpointRateLimit
   , Payload(..)
   , RateLimitInfo, initRateLimit
   , viewServiceSettings
@@ -12,6 +13,8 @@ import Dict exposing (Dict)
 import Url.Builder as UrlB
 
 import Article exposing (Article)
+import Maybe.Extra exposing (unwrap)
+import Parser exposing (end)
 
 
 type alias Service =
@@ -21,7 +24,13 @@ type alias Service =
   }
 
 
-type alias Endpoint =
+type Endpoint
+  = Ready EndpointData
+--| OverRateLimit EndpointData Time.Posix
+  | Problem EndpointData
+
+
+type alias EndpointData =
   { name: String
   , baseUrl: String
   , path: List String
@@ -55,13 +64,35 @@ initRateLimit limit reset =
   }
 
 
+newEndpoint : EndpointData -> Endpoint
+newEndpoint data =
+  Ready data
+
+
 isReady : Endpoint -> Bool
 isReady endpoint =
-  case endpoint.rateLimit of
+  case (unwrapEndpoint endpoint).rateLimit of
     Just rateLimit ->
       rateLimit.remaining > 0
 
     Nothing -> True
+
+
+unwrapEndpoint : Endpoint -> EndpointData
+unwrapEndpoint endpoint =
+  case endpoint of
+    Ready data -> data
+    Problem data -> data
+
+
+updateEndpointRateLimit : Dict String Endpoint -> Endpoint -> RateLimitInfo -> Dict String Endpoint
+updateEndpointRateLimit endpoints endpoint rateLimit =
+  case endpoint of
+    Ready data ->
+      Dict.insert data.name (Ready { data | rateLimit = Just rateLimit}) endpoints
+
+    Problem data ->
+      Dict.insert data.name (Ready { data | rateLimit = Just rateLimit}) endpoints
 
 
 -- VIEW
@@ -77,10 +108,13 @@ viewServiceSettings service =
 
 viewEndpointStatus : Endpoint -> Html msg
 viewEndpointStatus endpoint =
-  case endpoint.rateLimit of
+  let
+    data = unwrapEndpoint endpoint
+  in
+  case data.rateLimit of
     Just rateLimit ->
       div []
-        [ p [] [ text endpoint.name ]
+        [ p [] [ text data.name ]
         , progress
             [ class "progress"
             , value (String.fromInt rateLimit.remaining)
@@ -92,4 +126,4 @@ viewEndpointStatus endpoint =
         ]
 
     Nothing ->
-      div [] [ p [] [ text endpoint.name ] ]
+      div [] [ p [] [ text data.name ] ]
