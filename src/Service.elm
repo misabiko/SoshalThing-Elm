@@ -1,7 +1,7 @@
 module Service exposing
   ( Service
   , Endpoint, isReady, newEndpoint, unwrapEndpoint, updateEndpointRateLimit
-  , getArticles
+  , getTimelineArticles, getArticlesList
   , Payload(..)
   , RateLimitInfo, initRateLimit
   , viewServiceSettings
@@ -96,9 +96,14 @@ updateEndpointRateLimit endpoints endpoint rateLimit =
       Dict.insert data.name (Ready { data | rateLimit = Just rateLimit}) endpoints
 
 
-getArticles : Service a -> List Article.Id -> List (Article a)
-getArticles service ids =
+getTimelineArticles : Service a -> List Article.Id -> List (Article a)
+getTimelineArticles service ids =
   List.filterMap (Article.get service.articles) ids
+
+
+getArticlesList : Service a -> List (Article a)
+getArticlesList service =
+  Dict.values service.articles
 
 
 -- VIEW
