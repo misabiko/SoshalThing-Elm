@@ -1,5 +1,7 @@
 module Article exposing
-    ( Article, Id, Collection, listToDict
+    ( Article, Id
+    , Collection, get
+    , listToDict
     , SocialData, Media(..), MediaContent(..), ImageData, VideoData
     )
 
@@ -65,3 +67,8 @@ listToDict : List (Article a) -> (Collection a)
 listToDict articles =
   Dict.fromList
     <| List.map (\article -> (article.id, article)) articles
+
+
+get : Collection a -> Id -> Maybe (Article a)
+get articles id =
+  Dict.get id articles
