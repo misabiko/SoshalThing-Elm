@@ -1,6 +1,6 @@
 module Article exposing
     ( Article, Id, Collection, listToDict
-    , SocialData, Media(..), ImageData, VideoData
+    , SocialData, Media(..), MediaContent(..), ImageData, VideoData
     , ShareableArticle, getShareableArticles, getShareableId
     )
 
@@ -54,7 +54,15 @@ type alias VideoData =
 
 
 type Media
+  = ThumbnailOnly ImageData
+  | ReadyToLoad ImageData MediaContent
+  | Loading ImageData MediaContent
+  | FullyLoaded MediaContent
+
+
+type MediaContent
   = Images (List ImageData)
+  | Image ImageData
   | Video VideoData
 
 
