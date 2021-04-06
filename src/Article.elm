@@ -16,7 +16,8 @@ type alias Article =
   , text: Maybe String
   , social: Maybe SocialData
   , share: Maybe Id
-  , media: Maybe (Media)
+  , media: Maybe Media
+  , index: Maybe Int
   }
 
 

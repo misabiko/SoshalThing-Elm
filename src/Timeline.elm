@@ -1,11 +1,12 @@
 module Timeline exposing
     ( Timeline, TimelineArticle, TimelineShareable, timelineArticlesToIds, timelineArticlesToShareable, isCompact, CompactMode(..)
-    , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
-    , timelineRefreshSub
+    , updateTimelineArticles, getTimelineServiceEndpoint
+    , timelineRefreshSub, SortMethod(..)
     )
 
 import Dict exposing (Dict)
 import Time
+import List.Extra as ListE
 
 import Article exposing (Article, ShareableArticle, getShareableArticles)
 import Service exposing (Service, Endpoint)
@@ -21,29 +22,30 @@ type alias Timeline =
   , interval: Maybe Int
   , filters: List Filter
   , compactMode: CompactMode
+  , sort: SortMethod
   }
 
 
 type alias TimelineArticle =
-    { id: Article.Id
-    , compact: SettingOverride CompactMode
-    }
+  { id: Article.Id
+  , compact: SettingOverride CompactMode
+  }
 
 
 type alias TimelineShareable =
-    { shareableArticle: ShareableArticle
-    , compact: SettingOverride CompactMode
-    }
+  { shareableArticle: ShareableArticle
+  , compact: SettingOverride CompactMode
+  }
 
 
 type SettingOverride setting
-    = Inherit
-    | Overrided setting
+  = Inherit
+  | Overrided setting
 
 
 type CompactMode
-    = Compact
-    | Expand
+  = Compact
+  | Expand
 
 
 newTimelineArticle : Article.Id -> TimelineArticle
@@ -67,11 +69,11 @@ isCompact timelineCompactMode timelineShareable =
         Expand -> False
 
 
-updateTimelineArticles : List Article.Id -> String -> List Timeline -> List Timeline
-updateTimelineArticles articleIds timelineTitle timelines =
+updateTimelineArticles : Article.Collection -> SortMethod -> List Article.Id -> String -> List Timeline -> List Timeline 
+updateTimelineArticles articles sortMethod articleIds timelineTitle timelines =
   List.map (\timeline -> 
     if timeline.title == timelineTitle then
-      { timeline | articleIds = timelineSortArticles (appendMissingArticleIds timeline.articleIds articleIds) }
+      { timeline | articleIds = timelineSortArticles articles sortMethod (appendMissingArticleIds timeline.articleIds articleIds) }
     else
       timeline)
     timelines
@@ -100,11 +102,27 @@ timelineArticlesToShareable timelineArticles shareableArticles =
   ) timelineArticles shareableArticles 
 
 
-timelineSortArticles : List TimelineArticle -> List TimelineArticle
-timelineSortArticles articleIds =
-  articleIds
-    |> List.sortBy (\article -> Maybe.withDefault 0 (String.toInt (article.id)))
-    |> List.reverse
+timelineSortArticles : Article.Collection -> SortMethod -> List TimelineArticle -> List TimelineArticle
+timelineSortArticles articles sortMethod articleIds =
+  case sortMethod of
+    ById ->
+      articleIds
+        |> List.sortBy (\timelineArticle -> Maybe.withDefault 0 (String.toInt (timelineArticle.id)))
+        |> List.reverse
+
+    ByIndex ->
+      List.sortBy (\timelineArticle ->
+          Maybe.withDefault 0
+            (
+              case (Dict.get timelineArticle.id articles) of
+                Just article ->
+                  article.index
+
+                Nothing -> Nothing
+            )
+      ) articleIds
+
+    _ -> articleIds
 
 
 getTimelineServiceEndpoint : Dict String Service -> Timeline -> Maybe (Service, Endpoint)
