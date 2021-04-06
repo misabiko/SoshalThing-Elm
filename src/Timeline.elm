@@ -48,6 +48,13 @@ type CompactMode
   | Expand
 
 
+type SortMethod
+  = Unsorted
+  | ById
+  | ByCreationDate
+  | ByIndex
+
+
 newTimelineArticle : Article.Id -> TimelineArticle
 newTimelineArticle id =
   { id = id
