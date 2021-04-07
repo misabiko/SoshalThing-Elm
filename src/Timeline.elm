@@ -23,6 +23,7 @@ type alias Timeline a =
   , filters: List (Filter a)
   , compactMode: CompactMode
   , sort: SortMethod a
+  , showOptions: Bool
   }
 
 
