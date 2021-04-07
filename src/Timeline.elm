@@ -20,7 +20,7 @@ type alias Timeline a =
   , articleIds: List TimelineArticle
   , options: Dict String String
   , interval: Maybe Int
-  , filters: List Filter
+  , filters: List (Filter a)
   , compactMode: CompactMode
   , sort: SortMethod a
   }

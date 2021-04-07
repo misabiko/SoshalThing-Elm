@@ -10,24 +10,25 @@ import Article exposing
   )
 
 
-type alias Filter =
-  (FilterMethod, FilterMode)
+type alias Filter a =
+  (FilterMethod a, FilterMode)
 
 
-type FilterMethod
+type FilterMethod a
   = IsRepost
   | HasMedia
+  | Custom ((Article a) -> Bool)
 
 
 type FilterMode = ExcludeIf | ExcludeIfNot
 
 
-filterArticles : List Filter -> List (Article a) -> List (Article a)
+filterArticles : List (Filter a) -> List (Article a) -> List (Article a)
 filterArticles filters articles =
   List.filter (passFiltersArticle filters) articles
 
 
-passFiltersArticle : List Filter -> (Article a) -> Bool
+passFiltersArticle : List (Filter a) -> (Article a) -> Bool
 passFiltersArticle filters article =
   List.any (\filter ->
     case (Tuple.second filter) of
@@ -39,7 +40,7 @@ passFiltersArticle filters article =
     |> not
 
 
-passFilterArticle : FilterMethod -> (Article a) -> Bool
+passFilterArticle : FilterMethod a -> Article a -> Bool
 passFilterArticle filter article =
   case filter of
     HasMedia ->
@@ -48,3 +49,6 @@ passFilterArticle filter article =
 
     IsRepost ->
       False
+
+    Custom getter ->
+      getter article
