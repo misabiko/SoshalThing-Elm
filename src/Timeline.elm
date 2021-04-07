@@ -13,7 +13,7 @@ import Service exposing (Service, Endpoint)
 import Filter exposing (..)
 
 
-type alias Timeline =
+type alias Timeline a =
   { title: String
   , serviceName: String
   , endpointName: String
@@ -22,7 +22,7 @@ type alias Timeline =
   , interval: Maybe Int
   , filters: List Filter
   , compactMode: CompactMode
-  , sort: SortMethod
+  , sort: SortMethod a
   }
 
 
@@ -42,11 +42,11 @@ type CompactMode
   | Expand
 
 
-type SortMethod
+type SortMethod a
   = Unsorted
   | ById
   | ByCreationDate
-  | ByIndex
+  | ByIndex ((Article a) -> Int)
 
 
 newTimelineArticle : Article.Id -> TimelineArticle
@@ -70,7 +70,7 @@ isCompact timelineCompactMode timelineShareable =
         Expand -> False
 
 
-updateTimelineArticles : Article.Collection a -> SortMethod -> List Article.Id -> String -> List Timeline -> List Timeline 
+updateTimelineArticles : Article.Collection a -> SortMethod a -> List Article.Id -> String -> List (Timeline a) -> List (Timeline a)
 updateTimelineArticles articles sortMethod articleIds timelineTitle timelines =
   List.map (\timeline -> 
     if timeline.title == timelineTitle then
@@ -95,7 +95,7 @@ timelineArticlesToIds timelineArticles =
   List.map (\article -> article.id) timelineArticles
 
 
-timelineSortArticles : Article.Collection a -> SortMethod -> List TimelineArticle -> List TimelineArticle
+timelineSortArticles : Article.Collection a -> SortMethod a -> List TimelineArticle -> List TimelineArticle
 timelineSortArticles articles sortMethod articleIds =
   case sortMethod of
     ById ->
@@ -103,23 +103,19 @@ timelineSortArticles articles sortMethod articleIds =
         |> List.sortBy (\timelineArticle -> Maybe.withDefault 0 (String.toInt (timelineArticle.id)))
         |> List.reverse
 
-    ByIndex ->
-      --List.sortBy (\timelineArticle ->
-      --    Maybe.withDefault 0
-      --      (
-      --        case (Dict.get timelineArticle.id articles) of
-      --          Just article ->
-      --            article.index
+    ByIndex getIndex ->
+      List.sortBy (\timelineArticle ->
+        case (Dict.get timelineArticle.id articles) of
+          Just article ->
+            getIndex article
 
-      --          Nothing -> Nothing
-      --      )
-      --)
-      articleIds
+          Nothing -> 0
+      ) articleIds
 
     _ -> articleIds
 
 
-getTimelineServiceEndpoint : Dict String (Service a) -> Timeline -> Maybe ((Service a), Endpoint)
+getTimelineServiceEndpoint : Dict String (Service a) -> Timeline a -> Maybe ((Service a), Endpoint)
 getTimelineServiceEndpoint services timeline =
   case (Dict.get timeline.serviceName services) of
     Just service ->
@@ -132,7 +128,7 @@ getTimelineServiceEndpoint services timeline =
     Nothing -> Nothing
 
 
-timelineRefreshSub : ((Service a) -> Endpoint -> Timeline -> msg) -> Dict String (Service a) -> Timeline -> Maybe (Sub msg)
+timelineRefreshSub : (Service a -> Endpoint -> Timeline a -> msg) -> Dict String (Service a) -> Timeline a -> Maybe (Sub msg)
 timelineRefreshSub refreshMsg services timeline =
   case ((getTimelineServiceEndpoint services timeline), timeline.interval) of
     (Just (service, endpoint), Just interval) ->
