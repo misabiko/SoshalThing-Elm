@@ -99,6 +99,17 @@ timelineArticlesToIds timelineArticles =
 timelineSortArticles : Article.Collection a -> SortMethod a -> List TimelineArticle -> List TimelineArticle
 timelineSortArticles articles sortMethod articleIds =
   case sortMethod of
+    Unsorted -> articleIds
+
+    ByCreationDate ->
+      List.sortBy (\timelineArticle ->
+        case (Dict.get timelineArticle.id articles) of
+          Just article ->
+            Time.posixToMillis article.creationDate
+
+          Nothing -> 0
+      ) articleIds
+
     ById ->
       articleIds
         |> List.sortBy (\timelineArticle -> Maybe.withDefault 0 (String.toInt (timelineArticle.id)))
@@ -112,8 +123,6 @@ timelineSortArticles articles sortMethod articleIds =
 
           Nothing -> 0
       ) articleIds
-
-    _ -> articleIds
 
 
 getTimelineServiceEndpoint : Dict String (Service a) -> Timeline a -> Maybe ((Service a), Endpoint)
