@@ -5,6 +5,7 @@ import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Html.Lazy exposing (..)
 import Time
+import Dict exposing (Dict)
 import Json.Decode as Decode exposing (Decoder, field, string, bool, int, maybe)
 import Json.Decode.Pipeline as DecodeP
 import Json.Decode.Extra as DecodeE
@@ -388,6 +389,12 @@ getId article =
 
     Quote quote ->
       quote.id
+
+
+listToDict : List Tweet -> (Article.Collection Tweet)
+listToDict articles =
+  Dict.fromList
+    <| List.map (\article -> (getId article, article)) articles
 
 
 getTweetFooter : Bool -> ViewArticle -> Maybe (Html msg)

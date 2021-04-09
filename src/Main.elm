@@ -20,7 +20,7 @@ import Timeline exposing
     , updateTimelineArticles, getTimelineServiceEndpoint
     , timelineRefreshSub
     )
-import Tweet
+import Tweet exposing (Tweet)
 import Filter exposing (..)
 
 
@@ -56,8 +56,8 @@ type Sidebar
 
 
 type alias Model =
-  { services: Dict String (Service TweetExt)
-  , timelines: List Timeline
+  { services: Dict String (Service Tweet)
+  , timelines: List (Timeline Tweet)
   , time : TimeModel
   , sidebar : Sidebar
   }
@@ -81,7 +81,7 @@ init _ =
   )
 
 
-initTimelines : List Timeline
+initTimelines : List (Timeline Tweet)
 initTimelines =
   [ { title = "Home"
     , serviceName = "Twitter"
@@ -91,6 +91,8 @@ initTimelines =
     , interval = Just 64285
     , filters = []
     , compactMode = Compact
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   , { title = "Art"
     , serviceName = "Twitter"
@@ -107,6 +109,8 @@ initTimelines =
         , (IsRepost, ExcludeIf)
         ]
     , compactMode = Expand
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   , { title = "1draw"
     , serviceName = "Twitter"
@@ -123,6 +127,8 @@ initTimelines =
         , (IsRepost, ExcludeIf)
         ]
     , compactMode = Compact
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   , { title = "User"
     , serviceName = "Twitter"
@@ -132,11 +138,13 @@ initTimelines =
     , interval = Just 9000
     , filters = []
     , compactMode = Compact
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   ]
 
 
-initTwitter : (String, (Service TweetExt))
+initTwitter : (String, (Service Tweet))
 initTwitter =
   ( "Twitter"
   , { name = "Twitter"
@@ -184,17 +192,17 @@ initTwitterEndpoint name path options maybeRateLimit =
 
 
 type Msg
-  = GotPayload (Service TweetExt) Endpoint Timeline (Result Http.Error (Result (List (String, Int)) (Payload TweetExt)))
-  | GotServicePayload (Service TweetExt) (Result Http.Error (Result (List (String, Int)) (Payload TweetExt)))
-  | Refresh (Service TweetExt) Endpoint Timeline
+  = GotPayload (Service Tweet) Endpoint (Timeline Tweet) (Result Http.Error (Result (List (String, Int)) (Payload Tweet)))
+  | GotServicePayload (Service Tweet) (Result Http.Error (Result (List (String, Int)) (Payload Tweet)))
+  | Refresh (Service Tweet) Endpoint (Timeline Tweet)
   | RefreshEverything
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
-  | Like (Service TweetExt) Article
-  | Repost (Service TweetExt) Article
+  | Like (Service Tweet) (Article Tweet)
+  | Repost (Service Tweet) (Article Tweet)
   | HideSidebarMenu
   | ShowSidebarMenu SidebarMenu
-  | DebugArticle Article
+  | DebugArticle (Article Tweet)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -368,7 +376,7 @@ viewSidebarMenu model sidebarMenu =
       lazy viewServiceMenu (Dict.values model.services)
 
 
-viewServiceMenu : List (Service TweetExt) -> Html Msg
+viewServiceMenu : List (Service Tweet) -> Html Msg
 viewServiceMenu services =
   div [ class "sidebarMenu" ]
     <| List.map (lazy Service.viewServiceSettings) services
@@ -379,12 +387,12 @@ viewTimelineContainer model =
   Html.Keyed.node "div" [ id "timelineContainer" ] (List.map (viewKeyedTimeline model) model.timelines)
 
 
-viewKeyedTimeline : Model -> Timeline -> (String, Html Msg)
+viewKeyedTimeline : Model -> (Timeline Tweet) -> (String, Html Msg)
 viewKeyedTimeline model timeline =
   (timeline.title, viewTimeline model timeline)
 
 
-viewTimeline : Model -> Timeline -> Html Msg
+viewTimeline : Model -> (Timeline Tweet) -> Html Msg
 viewTimeline model timeline =
   case (getTimelineServiceEndpoint model.services timeline) of
     Nothing ->
@@ -402,17 +410,16 @@ viewTimeline model timeline =
                     (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
                     [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
             ]
-          , lazy4 (viewContainer service) model.time timeline.filters timeline.compactMode (timelineArticlesToShareable timeline.articleIds (Article.getShareableArticles service.articles (timelineArticlesToIds timeline.articleIds)))
+          , lazy4 (viewContainer service) model.time timeline.filters timeline.compactMode timeline.articleIds
           ]
 
 
-viewContainer : (Service TweetExt) -> TimeModel -> List Filter -> CompactMode -> List TimelineShareable -> Html Msg
-viewContainer service timeModel filters timelineCompact timelineShareables =
+viewContainer : (Service Tweet) -> TimeModel -> List (Filter Tweet) -> CompactMode -> List TimelineArticle -> Html Msg
+viewContainer service timeModel filters timelineCompact timelineArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ]
-    ( List.map2
-        (Tweet.viewKeyedTweet Like Repost DebugArticle timeModel service)
-        (List.map (\ts -> isCompact timelineCompact ts) timelineShareables)
-        (Filter.filterShareableArticles filters (List.map (\ts -> ts.shareableArticle) timelineShareables))
+    ( List.map
+        (Tweet.viewKeyedTweet timeModel service)
+        (Filter.filterArticles filters (Service.getTimelineArticles service (List.map .id timelineArticles)))
     )
 
 
@@ -425,7 +432,7 @@ viewIcon icon iconType size =
 -- HTTP
 
 
-postLike : (Service TweetExt) -> Article -> Cmd Msg
+postLike : (Service Tweet) -> (Article Tweet) -> Cmd Msg
 postLike service article =
   case article.social of
     Just social ->
@@ -438,7 +445,7 @@ postLike service article =
     Nothing -> Cmd.none
 
 
-postRetweet : (Service TweetExt) -> Article -> Cmd Msg
+postRetweet : (Service Tweet) -> (Article Tweet) -> Cmd Msg
 postRetweet service article =
   case article.social of
     Just social ->
@@ -454,7 +461,7 @@ postRetweet service article =
     Nothing -> Cmd.none
 
 
-getEndpoint : (Service TweetExt) -> Endpoint -> Timeline -> Cmd Msg
+getEndpoint : (Service Tweet) -> Endpoint -> (Timeline Tweet) -> Cmd Msg
 getEndpoint service endpoint timeline =
   let
     endpointData = Service.unwrapEndpoint endpoint

@@ -22,7 +22,7 @@ type alias Id = String
 
 
 type alias Collection a =
-  Dict String (Article a)
+  Dict String a
 
 
 -- EXTENSIONS
