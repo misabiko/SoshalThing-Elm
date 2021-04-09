@@ -27,6 +27,7 @@ type alias Collection a =
 
 -- EXTENSIONS
 
+
 type alias SocialData =
   { authorName: String
   , authorHandle: String

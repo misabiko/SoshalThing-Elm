@@ -1,4 +1,4 @@
-module Tweet exposing (payloadResponseDecoder, viewKeyedTweet)
+module Tweet exposing (TweetExt, payloadResponseDecoder, viewKeyedTweet)
 
 import Html exposing (..)
 import Html.Events exposing (onClick)
@@ -10,11 +10,76 @@ import Json.Decode.Pipeline as DecodeP
 import Json.Decode.Extra as DecodeE
 import Maybe.Extra as MaybeE
 
-import Article exposing (Article, SocialData, Media(..), ImageData, VideoData, ShareableArticle)
+import Article exposing (Article, Id, SocialData, MediaContent(..), ImageData, VideoData)
 import Service exposing (Payload(..), RateLimitInfo)
-import Timeline exposing (TimelineShareable, isCompact, CompactMode(..))
+import Timeline exposing (isCompact, CompactMode(..))
 import TimeParser
 import Extra exposing (..)
+
+
+type TweetExt
+  = Tweet TweetData
+  | Retweet RetweetData
+  | Quote QuoteData
+
+
+type alias TweetData =
+  { text: String
+  , social: SocialData
+  , media: Maybe MediaContent
+  }
+
+
+newTweet : Id -> Time.Posix -> TweetData -> (Article TweetData)
+newTweet id creationDate tweet =
+  { id = id
+  , creationDate = creationDate
+  , text = tweet.text
+  , social = tweet.social
+  , media = tweet.media
+  }
+
+
+type alias RetweetData =
+  { social: SocialData
+  , media: Maybe MediaContent
+  , share: Id
+  }
+
+
+newRetweet : Id -> Time.Posix -> RetweetData -> (Article TweetData)
+newRetweet id creationDate retweet =
+  { id = id
+  , creationDate = creationDate
+  , social = retweet.social
+  , media = retweet.media
+  , share = retweet.share
+  }
+
+
+type alias QuoteData =
+  { text: String
+  , social: SocialData
+  , media: Maybe MediaContent
+  , share: Id
+  , permalink: String
+  }
+
+
+newQuote : Id -> Time.Posix -> QuoteData -> (Article TweetData)
+newQuote id creationDate quote =
+  { id = id
+  , creationDate = creationDate
+  , text = quote.text
+  , social = quote.social
+  , media = quote.media
+  , share = quote.share
+  }
+
+type ViewArticle
+  = ViewTweet TweetExt
+  | ViewRetweet RetweetData TweetData
+  | ViewQuote QuoteData TweetData
 
 
 type alias TweetSkeletonParts msg =
@@ -24,24 +89,18 @@ type alias TweetSkeletonParts msg =
     }
 
 
-type TweetType
-  = Tweet
-  | Retweet
-  | Quote
-
-
 type alias TimeModel =
   { zone : Time.Zone
   , lastNow : Time.Posix
   }
 
 
-type alias Like service msg =
-  (service -> Article -> msg)
+{-type alias Like service msg =
+  (service -> ViewArticle -> msg)
 
 
 type alias Repost service msg =
-  (service -> Article -> msg)
+  (service -> ViewArticle -> msg)-}
 
 
 -- VIEW
@@ -53,12 +112,12 @@ viewIcon icon iconType size =
     [ i [ class iconType, class icon, class size ] [] ]
 
 
-viewKeyedTweet : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> service -> Bool -> ShareableArticle -> (String, Html msg)
-viewKeyedTweet likeMsg repostMsg debugMsg timeModel service compact shareableArticle =
-  (Article.getShareableId shareableArticle, lazy3 (viewTweet likeMsg repostMsg debugMsg service) timeModel compact shareableArticle)
+viewKeyedTweet : (ViewArticle -> msg) -> TimeModel -> service -> Bool -> ViewArticle -> (String, Html msg)
+viewKeyedTweet debugMsg timeModel service compact article =
+  (article.id, lazy3 (viewTweet debugMsg service) timeModel compact article)
 
 
-viewTweetHeader : TimeModel -> Article -> SocialData -> Html msg
+viewTweetHeader : TimeModel -> ViewArticle -> SocialData -> Html msg
 viewTweetHeader timeModel article social =
   div [ class "articleHeader" ]
     [ a [ class "names"
@@ -71,21 +130,20 @@ viewTweetHeader timeModel article social =
         ]
     , span [ class "timestamp" ]
         [ small
-          [ title (TimeParser.toFullTimeFormat timeModel article.creationDate) ]
-          [ text (TimeParser.relativeTimeFormat timeModel article.creationDate) ]
+          [ title (TimeParser.toFullTimeFormat timeModel (getCreationDate article)) ]
+          [ text (TimeParser.relativeTimeFormat timeModel (getCreationDate article)) ]
         ]
     ]
 
 
-viewTweetButtons : Like service msg -> Repost service msg -> (Article -> msg) -> service -> Article -> SocialData -> Html msg
-viewTweetButtons likeMsg repostMsg debugMsg service article social =
+viewTweetButtons : service -> ViewArticle -> SocialData -> Html msg
+viewTweetButtons service article social =
   nav [ class "level", class "is-mobile" ]
     [ div [ class "level-left" ]
         [ a [ class "level-item"
             , class "articleButton"
             , class "repostButton"
             , classList [("repostedPostButton", social.reposted)]
-            , onClick (repostMsg service article)
             ]
             (maybeJoinR
               (viewIcon "fa-retweet" "fas" "")
@@ -101,7 +159,6 @@ viewTweetButtons likeMsg repostMsg debugMsg service article social =
             , class "articleButton"
             , class "likeButton"
             , classList [("likedPostButton", social.liked)]
-            , onClick (likeMsg service article)
             ]
             (consr
               [ viewIcon "fa-heart" (if social.liked then "fas" else "far") "" ]
@@ -116,15 +173,14 @@ viewTweetButtons likeMsg repostMsg debugMsg service article social =
         , a [ class "level-item"
             , class "articleButton"
             , class "articleMenuButton"
-            , onClick (debugMsg article)
             ]
             [ viewIcon "fa-ellipsis-h" "fas" "" ]
         ]
     ]
 
 
-viewTweetSkeleton : Like service msg -> Repost service msg -> (Article -> msg) -> TimeModel -> TweetSkeletonParts msg -> service -> Article -> Html msg
-viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service article =
+viewTweetSkeleton : TimeModel -> TweetSkeletonParts msg -> service -> ViewArticle -> Html msg
+viewTweetSkeleton timeModel parts service article =
   case ((article.text, article.social)) of
     (Just textStr, Just social) ->
       Html.article [ class "article", attribute "articleId" article.id ]
@@ -145,7 +201,7 @@ viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service article =
                   ++
                   (MaybeE.cons
                     parts.extra
-                    [viewTweetButtons likeMsg repostMsg debugMsg service article social]
+                    [viewTweetButtons service article social]
                   )
                   )
               ]
@@ -159,69 +215,37 @@ viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service article =
         [ text ("Couldn't find text and social extension for " ++ article.id) ]
 
 
-getTweetType : ShareableArticle -> TweetType
-getTweetType shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just _ ->
-      case shareableArticle.article.text of
-        Just _ -> Quote
-        Nothing -> Retweet
-    Nothing -> Tweet
-
-
-getActualTweet : ShareableArticle -> Article
-getActualTweet shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just shared ->
-      case (getTweetType shareableArticle) of
-        Tweet -> shareableArticle.article
-        Retweet -> shared
-        Quote -> shareableArticle.article
-    Nothing -> shareableArticle.article
-
-
-viewTweet : Like service msg -> Repost service msg -> (Article -> msg) -> service -> TimeModel -> Bool -> ShareableArticle -> Html msg
-viewTweet likeMsg repostMsg debugMsg service timeModel compact shareableArticle =
+viewTweet : service -> TimeModel -> Bool -> ViewArticle -> Html msg
+viewTweet service timeModel compact article =
   let
-    actualTweet = getActualTweet shareableArticle
     parts =
-      { superHeader = getTweetSuperHeader shareableArticle
-      , extra = getTweetExtra timeModel shareableArticle
-      , footer = getTweetFooter compact shareableArticle
+      { superHeader = getTweetSuperHeader article
+      , extra = getTweetExtra timeModel article
+      , footer = getTweetFooter compact article
       }
   in
-    viewTweetSkeleton likeMsg repostMsg debugMsg timeModel parts service actualTweet
+    viewTweetSkeleton timeModel parts service article
 
 
-getRetweetSuperHeader : Article -> Html msg
-getRetweetSuperHeader article =
-  case article.social of
-    Just social ->
-      div [ class "repostLabel" ]
-        [ a [ href ("https://twitter.com/" ++ social.authorHandle)
-            , target "_blank"
-            , rel "noopener noreferrer"
-            ]
-            [ text (social.authorName ++ " retweeted") ]
-        ]
+getTweetSuperHeader : ViewArticle -> Maybe (Html msg)
+getTweetSuperHeader article =
+  case article of
+    ViewRetweet retweet tweet ->
+      Just (
+        div [ class "repostLabel" ]
+          [ a [ href ("https://twitter.com/" ++ retweet.social.authorHandle)
+              , target "_blank"
+              , rel "noopener noreferrer"
+              ]
+              [ text (retweet.social.authorName ++ " retweeted") ]
+          ]
+      )
     
-    Nothing ->
-      div [ class "repostLabel" ] []
+    _ ->
+      Nothing
 
 
-getTweetSuperHeader : ShareableArticle -> Maybe (Html msg)
-getTweetSuperHeader shareableArticle =
-  case shareableArticle.sharedArticle of
-    Just _ ->
-      case shareableArticle.article.text of
-        Just _ ->
-          Nothing
-        Nothing ->
-          Just (getRetweetSuperHeader shareableArticle.article)
-    Nothing -> Nothing
-
-
-getQuoteExtra : TimeModel -> Article -> Html msg
+getQuoteExtra : TimeModel -> ViewArticle -> Html msg
 getQuoteExtra timeModel article =
   case ((article.social, article.text)) of
     (Just social, Just quoteText) ->
@@ -234,11 +258,11 @@ getQuoteExtra timeModel article =
     _ -> div [] []
 
 
-getTweetExtra : TimeModel -> ShareableArticle -> Maybe (Html msg)
-getTweetExtra timeModel shareableArticle =
-  case shareableArticle.sharedArticle of
+getTweetExtra : TimeModel -> ViewArticle -> Maybe (Html msg)
+getTweetExtra timeModel article =
+  case article.sharedArticle of
     Just shared ->
-      case shareableArticle.article.text of
+      case article.article.text of
         Just _ ->
           Just (lazy2 getQuoteExtra timeModel shared)
         Nothing ->
@@ -246,7 +270,7 @@ getTweetExtra timeModel shareableArticle =
     Nothing -> Nothing
 
 
-getMediaFooter : Bool -> Media -> Html msg
+getMediaFooter : Bool -> MediaContent -> Html msg
 getMediaFooter compact media =
   case media of
     Images imageDatas ->
@@ -286,17 +310,43 @@ imageFormatClass imageData =
     Nothing -> "portrait"
 
 
-getTweetFooter : Bool -> ShareableArticle -> Maybe (Html msg)
-getTweetFooter compact shareableArticle =
+getMedia : ViewArticle -> Maybe MediaContent
+getMedia article =
+  case article of
+    ViewTweet tweet ->
+      tweet.media
+
+    ViewRetweet retweet tweet ->
+      tweet.media
+
+    ViewQuote quote tweet ->
+      tweet.media
+
+
+getCreationDate : ViewArticle -> Maybe Time.Posix
+getCreationDate article =
+  case article of
+    ViewTweet tweet ->
+      tweet.creationDate
+
+    ViewRetweet retweet _ ->
+      retweet.creationDate
+
+    ViewQuote quote _ ->
+      quote.creationDate
+
+
+getTweetFooter : Bool -> ViewArticle -> Maybe (Html msg)
+getTweetFooter compact article =
   Maybe.andThen
     (\media -> Just (lazy2 getMediaFooter compact media))
-    (getActualTweet shareableArticle).media
+    (getMedia article)
 
 
 -- DECODE
 
 
-unpackDecodedTweets : Maybe RateLimitInfo -> List ShareableArticle -> Payload
+unpackDecodedTweets : Maybe RateLimitInfo -> List ((Article TweetData), Maybe (Article TweetData)) -> Payload (Article TweetData)
 unpackDecodedTweets maybeRateLimit decodedTweets =
   List.map unpackDecodedTweet decodedTweets
   |> List.unzip
@@ -316,28 +366,22 @@ unpackDecodedTweets maybeRateLimit decodedTweets =
   )
 
 
-unpackDecodedTweet : ShareableArticle -> (List Article, String)
+unpackDecodedTweet : ((Article TweetData), Maybe (Article TweetData)) -> (List (Article TweetData), String)
 unpackDecodedTweet decodedTweet =
-  ( case decodedTweet.sharedArticle of
-          Just sharedArticle ->
-            [decodedTweet.article, sharedArticle]
-          Nothing ->
-            [decodedTweet.article]
-  , decodedTweet.article.id
+  ( case (Tuple.second decodedTweet) of
+      Just sharedTweet ->
+        [Tuple.first decodedTweet, sharedTweet]
+      Nothing ->
+        [Tuple.first decodedTweet]
+  , (Tuple.first decodedTweet).id
   )
 
 
-payloadDecoder : Decoder Payload
+payloadDecoder : Decoder (Payload (Article TweetData))
 payloadDecoder =
   Decode.map2 unpackDecodedTweets
     (Decode.maybe rateLimitDecoder)
-    (
-      Decode.oneOf
-        [ (Decode.list tweetDecoder)
-        , (Decode.map List.singleton tweetDecoder)
-        ]
-        |> field "statuses"
-    )
+    ( field "statuses" (Decode.list (Decode.succeed ())) )
 
 
 
@@ -349,36 +393,59 @@ rateLimitDecoder =
     (Decode.at ["_headers", "x-rate-limit-reset"] DecodeE.parseInt)
 
 
-tweetDecoder : Decoder ShareableArticle
+{-exampleTweetArticle : Article TweetExt
+exampleTweetArticle =
+  { id = "1010"
+  , creationDate = Time.millisToPosix 0
+  , text = "Boop"
+  , social = 
+      { authorName = "Blep"
+      , authorHandle = "@blerp"
+      , authorAvatar = ""
+      , liked = False
+      , reposted = False
+      , likeCount = 0
+      , repostCount = 0
+      }
+  , media = Nothing
+  }-}
+
+tweetDecoder : Decoder ((Article TweetData), Maybe (Article TweetData))
 tweetDecoder =
-  Decode.andThen (\shareableArticle ->
-      case (getTweetType shareableArticle) of
-        Quote ->
-          Decode.andThen (\maybeQuoteUrl ->
-            Decode.succeed { shareableArticle
-              | article = fixTweetText maybeQuoteUrl shareableArticle.article
-              , sharedArticle = Maybe.map (fixTweetText maybeQuoteUrl) shareableArticle.sharedArticle
+  Decode.succeed
+    ( ()
+    , Nothing
+    )
+  {-Decode.map2 Tuple.pair
+    (Decode.map Just plainTweetDecoder)
+    (Decode.succeed Nothing)-}
+  {-Decode.oneOf
+    [ Decode.andThen
+        (\quoted -> Decode.map2 Tuple.pair quoteDecoder quoted)
+        (field "quoted_status" plainTweetDecoder)
+    , Decode.andThen
+        (\retweeted -> Decode.map2 Tuple.pair retweetDecoder retweeted)
+        (field "retweeted_status" plainTweetDecoder)
+    , (Decode.map Just plainTweetDecoder, Decode.succeed Nothing)
+    ]-}
+  {-Decode.andThen (\articles ->
+      case articles of
+        (Quote quote, Tweet tweet) ->
+          ( Decode.succeed
+              ( { quote | text = fixTweetText maybeQuoteUrl quote.text }
+              , sharedArticle = Maybe.map (fixTweetText maybeQuoteUrl) article.sharedArticle
             }
           )
-          (Decode.maybe (Decode.at ["quoted_status_permalink", "url"] Decode.string))
 
         _ ->
-          Decode.succeed { shareableArticle
-            | article = fixTweetText Nothing shareableArticle.article
-            , sharedArticle = Maybe.map (fixTweetText Nothing) shareableArticle.sharedArticle
+          Decode.succeed { article
+            | article = fixTweetText Nothing article.article
+            , sharedArticle = Maybe.map (fixTweetText Nothing) article.sharedArticle
           }
-    )
-    (Decode.map2 ShareableArticle
-      topTweetDecoder
-      (Decode.maybe
-        (Decode.oneOf
-          [ field "quoted_status" topTweetDecoder
-          , field "retweeted_status" topTweetDecoder
-          ]
-        )))
+    )-}
 
 
-fixTweetText : Maybe String -> Article -> Article
+fixTweetText : Maybe String -> (Article TweetData) -> (Article TweetData)
 fixTweetText maybeQuoteUrl article =
   case article.text of
     Just textStr ->
@@ -397,7 +464,7 @@ fixTweetText maybeQuoteUrl article =
     Nothing -> article
 
 
-fixTweetTextMedia : Media -> String -> String
+fixTweetTextMedia : MediaContent -> String -> String
 fixTweetTextMedia media textStr =
   case media of
     Images imageDatas ->
@@ -410,18 +477,45 @@ fixTweetTextMedia media textStr =
       String.replace videoData.compressedUrl "" textStr
       |> String.trimRight
 
-topTweetDecoder : Decoder Article
-topTweetDecoder =
-  Decode.succeed Article
-    |> DecodeP.required "id_str" string
-    |> DecodeP.custom (Decode.andThen
+
+plainTweetDecoder : Decoder (Article TweetData)
+plainTweetDecoder =
+  Decode.map5 newTweet
+    (field "id_str" string)
+    (Decode.andThen
       TimeParser.tweetTimeDecoder
       (field "created_at" string)
     )
-    |> DecodeP.custom (Decode.maybe textDecoder)
-    |> DecodeP.custom (Decode.maybe socialDecoder)
-    |> DecodeP.custom (Decode.maybe shareDecoder)
-    |> DecodeP.custom (Decode.maybe mediaDecoder)
+    textDecoder
+    socialDecoder
+    (Decode.maybe mediaDecoder)
+
+
+retweetDecoder : Decoder (Article TweetData)
+retweetDecoder =
+  Decode.map5 newRetweet
+    (field "id_str" string)
+    (Decode.andThen
+      TimeParser.tweetTimeDecoder
+      (field "created_at" string)
+    )
+    socialDecoder
+    (Decode.maybe mediaDecoder)
+    (Decode.at ["retweeted_status", "id_str"] string)
+
+
+quoteDecoder : Decoder (Article TweetData)
+quoteDecoder =
+  Decode.map6 newQuote
+    (field "id_str" string)
+    (Decode.andThen
+      TimeParser.tweetTimeDecoder
+      (field "created_at" string)
+    )
+    textDecoder
+    socialDecoder
+    (Decode.maybe mediaDecoder)
+    (field "quoted_status_id_str" string)
 
 
 socialDecoder : Decoder SocialData
@@ -436,7 +530,7 @@ socialDecoder =
     |> DecodeP.required "retweet_count" int
 
 
-shareDecoder : Decoder Article.Id
+shareDecoder : Decoder Id
 shareDecoder =
   Decode.oneOf
     [ Decode.at ["retweeted_status", "id_str"] Decode.string
@@ -463,7 +557,7 @@ textDecoder =
     (Decode.maybe (Decode.at ["retweeted_status", "id_str"] Decode.string))
 
 
-mediaDecoder : Decoder Media
+mediaDecoder : Decoder MediaContent
 mediaDecoder =
   let
     decoder =
@@ -478,7 +572,7 @@ mediaDecoder =
 
                 "animated_gif" -> videoDecoder True
 
-                _ -> Decode.fail ("Media type '" ++ mediaType ++ "' not handled.")
+                _ -> Decode.fail ("MediaContent type '" ++ mediaType ++ "' not handled.")
 
             Nothing -> Decode.fail "No media found."
         )
@@ -490,7 +584,7 @@ mediaDecoder =
       ]
 
 
-imageDecoder : Decoder Media
+imageDecoder : Decoder MediaContent
 imageDecoder =
   Decode.map Images
     (Decode.list
@@ -514,7 +608,7 @@ sizeDecoder =
     (field "w" Decode.int)
     (field "h" Decode.int)
 
-videoDecoder : Bool -> Decoder Media
+videoDecoder : Bool -> Decoder MediaContent
 videoDecoder autoplay =
   Decode.andThen
     (\maybeVideo -> DecodeE.fromMaybe "Didn't find a video"  maybeVideo)
@@ -543,7 +637,7 @@ payloadErrorsDecoder =
       (field "code" int)
 
 
-payloadResponseDecoder : Decoder (Result (List (String, Int)) Payload)
+payloadResponseDecoder : Decoder (Result (List (String, Int)) (Payload (Article TweetData)))
 payloadResponseDecoder =
   Decode.andThen (\maybeErrors ->
         case maybeErrors of

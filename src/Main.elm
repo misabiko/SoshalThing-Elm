@@ -56,7 +56,7 @@ type Sidebar
 
 
 type alias Model =
-  { services: Dict String Service
+  { services: Dict String (Service TweetExt)
   , timelines: List Timeline
   , time : TimeModel
   , sidebar : Sidebar
@@ -136,7 +136,7 @@ initTimelines =
   ]
 
 
-initTwitter : (String, Service)
+initTwitter : (String, (Service TweetExt))
 initTwitter =
   ( "Twitter"
   , { name = "Twitter"
@@ -184,14 +184,14 @@ initTwitterEndpoint name path options maybeRateLimit =
 
 
 type Msg
-  = GotPayload Service Endpoint Timeline (Result Http.Error (Result (List (String, Int)) Payload))
-  | GotServicePayload Service (Result Http.Error (Result (List (String, Int)) Payload))
-  | Refresh Service Endpoint Timeline
+  = GotPayload (Service TweetExt) Endpoint Timeline (Result Http.Error (Result (List (String, Int)) (Payload TweetExt)))
+  | GotServicePayload (Service TweetExt) (Result Http.Error (Result (List (String, Int)) (Payload TweetExt)))
+  | Refresh (Service TweetExt) Endpoint Timeline
   | RefreshEverything
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
-  | Like Service Article
-  | Repost Service Article
+  | Like (Service TweetExt) Article
+  | Repost (Service TweetExt) Article
   | HideSidebarMenu
   | ShowSidebarMenu SidebarMenu
   | DebugArticle Article
@@ -368,7 +368,7 @@ viewSidebarMenu model sidebarMenu =
       lazy viewServiceMenu (Dict.values model.services)
 
 
-viewServiceMenu : List Service -> Html Msg
+viewServiceMenu : List (Service TweetExt) -> Html Msg
 viewServiceMenu services =
   div [ class "sidebarMenu" ]
     <| List.map (lazy Service.viewServiceSettings) services
@@ -406,7 +406,7 @@ viewTimeline model timeline =
           ]
 
 
-viewContainer : Service -> TimeModel -> List Filter -> CompactMode -> List TimelineShareable -> Html Msg
+viewContainer : (Service TweetExt) -> TimeModel -> List Filter -> CompactMode -> List TimelineShareable -> Html Msg
 viewContainer service timeModel filters timelineCompact timelineShareables =
   Html.Keyed.node "div" [ class "timelineArticles" ]
     ( List.map2
@@ -425,7 +425,7 @@ viewIcon icon iconType size =
 -- HTTP
 
 
-postLike : Service -> Article -> Cmd Msg
+postLike : (Service TweetExt) -> Article -> Cmd Msg
 postLike service article =
   case article.social of
     Just social ->
@@ -438,7 +438,7 @@ postLike service article =
     Nothing -> Cmd.none
 
 
-postRetweet : Service -> Article -> Cmd Msg
+postRetweet : (Service TweetExt) -> Article -> Cmd Msg
 postRetweet service article =
   case article.social of
     Just social ->
@@ -454,7 +454,7 @@ postRetweet service article =
     Nothing -> Cmd.none
 
 
-getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
+getEndpoint : (Service TweetExt) -> Endpoint -> Timeline -> Cmd Msg
 getEndpoint service endpoint timeline =
   let
     endpointData = Service.unwrapEndpoint endpoint
