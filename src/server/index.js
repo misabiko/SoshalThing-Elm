@@ -1,9 +1,16 @@
 const express = require('express');
 const path = require('path');
 const TwitterV1 = require('twitter-lite');
-const credentials = require('../../credentials.json');
 const favicon = require('serve-favicon');
 const morgan = require('morgan');
+
+let credentials;
+try {
+	credentials = require('../../credentials.json');
+}catch (e) {
+	console.error("Please include a 'credentials.json' file with {consumer_key, consumer_secret, access_key, access_secret}\n", e);
+	process.exit(1);
+}
 
 const clientV1 = new TwitterV1({
 	consumer_key: credentials.consumer_key,
