@@ -94,50 +94,6 @@ initTimelines =
     , compactMode = Compact
     , sort = ByCreationDate
     }
-  , { title = "Art"
-    , serviceName = "Twitter"
-    , endpointName = "List"
-    , articleIds = []
-    , options =
-        Dict.fromList
-          [ ("slug", "Art")
-          , ("owner_screen_name", "misabiko")
-          ]
-    , interval = Just 9000
-    , filters =
-        [ (HasMedia, ExcludeIfNot)
-        , (IsRepost, ExcludeIf)
-        ]
-    , compactMode = Expand
-    , sort = ByCreationDate
-    }
-  , { title = "1draw"
-    , serviceName = "Twitter"
-    , endpointName = "Search"
-    , articleIds = []
-    , options =
-        Dict.fromList
-          [ ("q", "-filter:retweets #深夜の真剣お絵描き60分一本勝負 OR #東方の90分お絵描き")
-          , ("result_type", "recent")
-          ]
-    , interval = Just 9000
-    , filters =
-        [ (HasMedia, ExcludeIfNot)
-        , (IsRepost, ExcludeIf)
-        ]
-    , compactMode = Compact
-    , sort = ByCreationDate
-    }
-  , { title = "User"
-    , serviceName = "Twitter"
-    , endpointName = "User Timeline"
-    , articleIds = []
-    , options = Dict.empty
-    , interval = Just 9000
-    , filters = []
-    , compactMode = Compact
-    , sort = ByCreationDate
-    }
   ]
 
 
