@@ -13,12 +13,12 @@ import Task
 import Url.Builder as UrlB
 import Maybe.Extra
 
-import Article exposing (Article, ShareableArticle)
+import Article exposing (Article)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import Timeline exposing
-    ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..), timelineArticlesToShareable
-    , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
-    , timelineRefreshSub, TimelineShareable
+    ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..)
+    , updateTimelineArticles, getTimelineServiceEndpoint
+    , timelineRefreshSub
     )
 import Tweet
 import Filter exposing (..)

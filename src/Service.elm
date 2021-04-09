@@ -42,10 +42,10 @@ type alias EndpointData =
 
 type Payload a
   = FreePayload
-      (List (Article a))
+      (List a)
       (List Article.Id)
   | RateLimitedPayload
-      (List (Article a))
+      (List a)
       (List Article.Id)
       RateLimitInfo
 
