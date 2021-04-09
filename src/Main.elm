@@ -17,11 +17,12 @@ import Article exposing (Article, ShareableArticle)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import Timeline exposing
     ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..), timelineArticlesToShareable
-    , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
+    , updateTimelineArticles, getTimelineServiceEndpoint
     , timelineRefreshSub, TimelineShareable
     )
 import Tweet
 import Filter exposing (..)
+import Timeline exposing (SortMethod(..))
 
 
 -- MAIN
@@ -91,6 +92,7 @@ initTimelines =
     , interval = Just 64285
     , filters = []
     , compactMode = Compact
+    , sort = ByCreationDate
     }
   , { title = "Art"
     , serviceName = "Twitter"
@@ -107,6 +109,7 @@ initTimelines =
         , (IsRepost, ExcludeIf)
         ]
     , compactMode = Expand
+    , sort = ByCreationDate
     }
   , { title = "1draw"
     , serviceName = "Twitter"
@@ -123,6 +126,7 @@ initTimelines =
         , (IsRepost, ExcludeIf)
         ]
     , compactMode = Compact
+    , sort = ByCreationDate
     }
   , { title = "User"
     , serviceName = "Twitter"
@@ -132,6 +136,7 @@ initTimelines =
     , interval = Just 9000
     , filters = []
     , compactMode = Compact
+    , sort = ByCreationDate
     }
   ]
 
@@ -212,7 +217,7 @@ update msg model =
                           Dict.insert service.name
                             { service | articles = Dict.union (Article.listToDict articles) service.articles }
                             model.services
-                      , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
+                      , timelines = updateTimelineArticles service.articles timeline.sort timelineArticles timeline.title model.timelines
                     }
                   , Task.perform NewTime Time.now
                   )
@@ -226,7 +231,7 @@ update msg model =
                               , endpoints = Service.updateEndpointRateLimit service.endpoints endpoint rateLimit
                             }
                             model.services
-                      , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
+                      , timelines = updateTimelineArticles service.articles timeline.sort timelineArticles timeline.title model.timelines
                     }
                   , Task.perform NewTime Time.now
                   )

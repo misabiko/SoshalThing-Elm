@@ -52,7 +52,6 @@ type SortMethod
   = Unsorted
   | ById
   | ByCreationDate
-  | ByIndex
 
 
 newTimelineArticle : Article.Id -> TimelineArticle
@@ -116,18 +115,6 @@ timelineSortArticles articles sortMethod articleIds =
       articleIds
         |> List.sortBy (\timelineArticle -> Maybe.withDefault 0 (String.toInt (timelineArticle.id)))
         |> List.reverse
-
-    ByIndex ->
-      List.sortBy (\timelineArticle ->
-          Maybe.withDefault 0
-            (
-              case (Dict.get timelineArticle.id articles) of
-                Just article ->
-                  article.index
-
-                Nothing -> Nothing
-            )
-      ) articleIds
 
     _ -> articleIds
 
