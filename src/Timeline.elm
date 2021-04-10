@@ -5,6 +5,7 @@ module Timeline exposing
     )
 
 import Dict exposing (Dict)
+import Array exposing (Array)
 import Time
 import List.Extra as ListE
 
@@ -20,7 +21,7 @@ type alias Timeline a =
   , articleIds: List TimelineArticle
   , options: Dict String String
   , interval: Maybe Int
-  , filters: List (Filter a)
+  , filters: Array (Filter a)
   , compactMode: CompactMode
   , sort: SortMethod a
   , showOptions: Bool
@@ -34,7 +35,7 @@ type alias ViewTimeline a =
   , articleIds: List TimelineArticle
   , options: Dict String String
   , interval: Maybe Int
-  , filters: List (Filter a)
+  , filters: Array (Filter a)
   , compactMode: CompactMode
   , sort: SortMethod a
   , showOptions: Bool
