@@ -31,6 +31,7 @@ type FilterMode = ExcludeIf | ExcludeIfNot
 
 type Msg
   = SetEnabled Int Bool
+  | SetMode Int FilterMode
 
 
 filterArticles : Array (Filter a) -> List (Article a) -> List (Article a)
