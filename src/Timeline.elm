@@ -1,5 +1,5 @@
 module Timeline exposing
-    ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..)
+    ( Timeline, TimelineArticle, ViewTimeline, toViewTimeline, timelineArticlesToIds, isCompact, CompactMode(..)
     , updateTimelineArticles, getTimelineServiceEndpoint
     , timelineRefreshSub, SortMethod(..)
     )
@@ -25,6 +25,47 @@ type alias Timeline a =
   , sort: SortMethod a
   , showOptions: Bool
   }
+
+
+type alias ViewTimeline a =
+  { title: String
+  , service: Service a
+  , endpoint: Endpoint
+  , articleIds: List TimelineArticle
+  , options: Dict String String
+  , interval: Maybe Int
+  , filters: List (Filter a)
+  , compactMode: CompactMode
+  , sort: SortMethod a
+  , showOptions: Bool
+  , data: Timeline a
+  }
+
+
+toViewTimeline : Dict String (Service a) -> Timeline a -> Maybe (ViewTimeline a)
+toViewTimeline services timeline =
+  Maybe.andThen
+    (\service ->
+      Maybe.andThen
+        (\endpoint ->
+          Just
+            { title = timeline.title
+            , service = service
+            , endpoint = endpoint
+            , articleIds = timeline.articleIds
+            , options = timeline.options
+            , interval = timeline.interval
+            , filters = timeline.filters
+            , compactMode = timeline.compactMode
+            , sort = timeline.sort
+            , showOptions = timeline.showOptions
+            , data = timeline
+            }
+        )
+        (Dict.get timeline.endpointName service.endpoints)
+    )
+    (Dict.get timeline.serviceName services)
+
 
 
 type alias TimelineArticle =
