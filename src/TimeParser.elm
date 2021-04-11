@@ -1,4 +1,4 @@
-module TimeParser exposing (tweetTimeDecoder, relativeTimeFormat, toFullDateFormat, toFullTimeFormat)
+module TimeParser exposing (tweetTimeDecoder, relativeTimeFormat, toFullDateFormat, toFullTimeFormat, TimeModel)
 
 import Time exposing (..)
 import Time.Extra as TimeE

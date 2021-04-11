@@ -1,10 +1,10 @@
 module Service exposing
-  ( Service
+  ( Service(..), unwrap
   , Endpoint, isReady, newEndpoint, unwrapEndpoint, updateEndpointRateLimit
   , getTimelineArticles, getArticlesList
   , Payload(..)
   , RateLimitInfo, initRateLimit
-  , viewServiceSettings
+  , viewServiceSettings, Msg
   )
 
 import Html exposing (..)
@@ -12,16 +12,22 @@ import Html.Attributes exposing (..)
 import Html.Lazy exposing (..)
 import Dict exposing (Dict)
 import Url.Builder as UrlB
+import Maybe.Extra as MaybeE
 
 import Article exposing (Article)
-import Maybe.Extra exposing (unwrap)
-import Parser exposing (end)
+import TimeParser
 
 
-type alias Service a =
+type Service ext vExt
+  = Service (ServiceData ext vExt)
+
+
+type alias ServiceData ext vExt =
   { name: String
   , endpoints: Dict String Endpoint
-  , articles: Article.Collection a
+  , articles: Article.Collection ext
+  , viewArticle: (Service ext vExt -> TimeParser.TimeModel -> Bool -> Article vExt -> Html Msg)
+  , toViewArticle: (Article.Collection ext -> Article ext -> Maybe (Article vExt))
   }
 
 
@@ -40,12 +46,12 @@ type alias EndpointData =
   }
 
 
-type Payload a
+type Payload ext
   = FreePayload
-      (List (Article a))
+      (List (Article ext))
       (List Article.Id)
   | RateLimitedPayload
-      (List (Article a))
+      (List (Article ext))
       (List Article.Id)
       RateLimitInfo
 
@@ -55,6 +61,14 @@ type alias RateLimitInfo =
   , limit: Int
   , reset: Int
   }
+
+
+type Msg
+  = Bleh
+
+
+unwrap : Service ext vExt -> ServiceData ext vExt
+unwrap (Service service) = service
 
 
 initRateLimit : Int -> Int -> RateLimitInfo
@@ -96,12 +110,12 @@ updateEndpointRateLimit endpoints endpoint rateLimit =
       Dict.insert data.name (Ready { data | rateLimit = Just rateLimit}) endpoints
 
 
-getTimelineArticles : Service a -> List Article.Id -> List (Article a)
+getTimelineArticles : ServiceData ext vExt -> List Article.Id -> List (Article ext)
 getTimelineArticles service ids =
   List.filterMap (Article.get service.articles) ids
 
 
-getArticlesList : Service a -> List (Article a)
+getArticlesList : ServiceData ext vExt -> List (Article ext)
 getArticlesList service =
   Dict.values service.articles
 
@@ -109,11 +123,14 @@ getArticlesList service =
 -- VIEW
 
 
-viewServiceSettings : Service a -> Html msg
+viewServiceSettings : Service ext vExt -> Html msg
 viewServiceSettings service =
+  let
+    serviceData = unwrap service
+  in
   div [ class "box" ]
-    ( (text service.name) ::
-      (List.map (lazy viewEndpointStatus) (Dict.values service.endpoints))
+    ( (text serviceData.name) ::
+      (List.map (lazy viewEndpointStatus) (Dict.values serviceData.endpoints))
     )
 
 

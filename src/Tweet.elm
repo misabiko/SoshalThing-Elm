@@ -1,4 +1,4 @@
-module Tweet exposing (payloadResponseDecoder, viewKeyedTweet, ArticleExt, toViewArticle, TweetExt(..))
+module Tweet exposing (payloadResponseDecoder, view, ArticleExt, ViewArticleExt, toViewArticle, TweetExt(..))
 
 import Html exposing (..)
 import Html.Events exposing (onClick)
@@ -152,7 +152,7 @@ viewIcon icon iconType size =
 
 viewKeyedTweet : TimeModel -> service -> Bool -> (Article ViewArticleExt) -> (String, Html msg)
 viewKeyedTweet timeModel service compact vTweet =
-  (getViewTweetId vTweet, lazy3 (viewTweet service) timeModel compact vTweet)
+  (getViewTweetId vTweet, lazy3 (view service) timeModel compact vTweet)
 
 
 viewTweetHeader : TimeModel -> Time.Posix -> SocialData -> Html msg
@@ -261,8 +261,8 @@ viewTweetSkeleton timeModel parts service article content social =
 --      vTweet.tweet
 
 
-viewTweet : service -> TimeModel -> Bool -> (Article ViewArticleExt) -> Html msg
-viewTweet service timeModel compact vTweet =
+view : service -> TimeModel -> Bool -> (Article ViewArticleExt) -> Html msg
+view service timeModel compact vTweet =
   let
     (article, content, social) =
       case vTweet.ext of

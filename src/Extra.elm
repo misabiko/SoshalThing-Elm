@@ -1,5 +1,8 @@
 module Extra exposing (..)
 
+import Html exposing (..)
+import Html.Attributes exposing (..)
+
 
 consr : List a -> Maybe a -> List a
 consr list item =
@@ -29,3 +32,9 @@ maybeJoinR el item =
 
         Nothing ->
           [el]
+
+
+viewIcon : String -> String -> String -> Html msg
+viewIcon icon iconType size =
+  span [ class "icon" ]
+    [ i [ class iconType, class icon, class size ] [] ]

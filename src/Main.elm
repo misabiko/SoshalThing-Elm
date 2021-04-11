@@ -15,15 +15,18 @@ import Url.Builder as UrlB
 import Maybe.Extra
 
 import Article exposing (Article)
-import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
+import Service exposing (Service(..), Endpoint, Payload(..), RateLimitInfo)
 import Timeline exposing
     ( Timeline, ViewTimeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..)
-    , updateTimelineArticles, getTimelineServiceEndpoint
-    , timelineRefreshSub
+    , updateTimelineArticles
+    --, getTimelineServiceEndpoint, timelineRefreshSub
     )
 import Tweet exposing (ArticleExt)
 import Filter exposing (..)
 import Timeline exposing (SortMethod(..))
+import TimeParser exposing (TimeModel)
+import Extra exposing (viewIcon)
+import Twitter.Service exposing (TwitterService)
 
 
 -- MAIN
@@ -42,12 +45,6 @@ main =
 -- MODEL
 
 
-type alias TimeModel =
-  { zone : Time.Zone
-  , lastNow : Time.Posix
-  }
-
-
 type SidebarMenu
   = ServiceMenu
 
@@ -58,7 +55,7 @@ type Sidebar
 
 
 type alias Model =
-  { services: Dict String (Service ArticleExt)
+  { services: Dict String TwitterService
   , timelines: List (Timeline ArticleExt)
   , time : TimeModel
   , sidebar : Sidebar
@@ -67,7 +64,7 @@ type alias Model =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-  ( { services =  Dict.fromList [ initTwitter ]
+  ( { services =  Dict.fromList (List.map (\service -> ((Service.unwrap service).name, service)) [ Twitter.Service.init ])
     , timelines = initTimelines
     , time =
         { zone = Time.utc
@@ -148,65 +145,22 @@ initTimelines =
   ]
 
 
-initTwitter : (String, (Service ArticleExt))
-initTwitter =
-  ( "Twitter"
-  , { name = "Twitter"
-    , endpoints = Dict.fromList
-        [ initTwitterEndpoint
-            "Home Timeline"
-            [ "statuses", "home_timeline" ]
-            [UrlB.string "count" "200"]
-            (Just (Service.initRateLimit 15 (15*60*1000)))
-        , initTwitterEndpoint
-            "User Timeline"
-            [ "statuses", "user_timeline" ]
-            []
-            (Just (Service.initRateLimit 900 (15*60*1000)))
-        , initTwitterEndpoint
-            "Search"
-            [ "search", "tweets" ]
-            []
-            (Just (Service.initRateLimit 180 (15*60*1000)))
-        , initTwitterEndpoint
-            "List"
-            [ "lists", "statuses" ]
-            []
-            (Just (Service.initRateLimit 900 (15*60*1000)))
-        ]
-    , articles = Dict.empty
-    }
-  )
-
-
-initTwitterEndpoint : String -> List String -> List UrlB.QueryParameter -> Maybe RateLimitInfo -> (String, Endpoint)
-initTwitterEndpoint name path options maybeRateLimit =
-  ( name
-  , Service.newEndpoint
-    { name = name
-    , baseUrl = "http://localhost:5000"
-    , path = [ "twitter", "v1" ] ++ path
-    , options = (UrlB.string "tweet_mode" "extended") :: options
-    , rateLimit = maybeRateLimit
-    }
-  )
-
-
 -- UPDATE
 
 
 type Msg
-  = GotPayload (Service ArticleExt) Endpoint (Timeline ArticleExt) (Result Http.Error (Result (List (String, Int)) (Payload ArticleExt)))
-  | GotServicePayload (Service ArticleExt) (Result Http.Error (Result (List (String, Int)) (Payload ArticleExt)))
-  | Refresh (Service ArticleExt) Endpoint (Timeline ArticleExt)
+  = GotPayload TwitterService Endpoint (Timeline ArticleExt) (Result Http.Error (Result (List (String, Int)) (Payload ArticleExt)))
+  | GotServicePayload TwitterService (Result Http.Error (Result (List (String, Int)) (Payload ArticleExt)))
+  | Refresh TwitterService Endpoint (Timeline ArticleExt)
   | RefreshEverything
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
-  | Like (Service ArticleExt) (Article ArticleExt)
-  | Repost (Service ArticleExt) (Article ArticleExt)
+  | Like TwitterService (Article ArticleExt)
+  | Repost TwitterService (Article ArticleExt)
   | HideSidebarMenu
   | ShowSidebarMenu SidebarMenu
   | DebugArticle (Article ArticleExt)
+  | GotTimelineMsg (Timeline.Msg ArticleExt)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -219,26 +173,32 @@ update msg model =
             Ok payload ->
               case payload of
                 FreePayload articles timelineArticles ->
+                  let
+                    serviceData = Service.unwrap service
+                  in
                   ( { model
                       | services =
-                          Dict.insert service.name
-                            { service | articles = Dict.union (Article.listToDict articles) service.articles }
+                          Dict.insert serviceData.name
+                            (Service { serviceData | articles = Dict.union (Article.listToDict articles) serviceData.articles })
                             model.services
-                      , timelines = updateTimelineArticles service.articles timeline.sort timelineArticles timeline.title model.timelines
+                      , timelines = updateTimelineArticles serviceData.articles timeline.sort timelineArticles timeline.title model.timelines
                     }
                   , Task.perform NewTime Time.now
                   )
 
                 RateLimitedPayload articles timelineArticles rateLimit ->
+                  let
+                    serviceData = Service.unwrap service
+                  in
                   ( { model
                       | services =
-                          Dict.insert service.name
-                            { service
-                              | articles = Dict.union (Article.listToDict articles) service.articles
-                              , endpoints = Service.updateEndpointRateLimit service.endpoints endpoint rateLimit
-                            }
+                          Dict.insert serviceData.name
+                            (Service { serviceData
+                              | articles = Dict.union (Article.listToDict articles) serviceData.articles
+                              , endpoints = Service.updateEndpointRateLimit serviceData.endpoints endpoint rateLimit
+                            })
                             model.services
-                      , timelines = updateTimelineArticles service.articles timeline.sort timelineArticles timeline.title model.timelines
+                      , timelines = updateTimelineArticles serviceData.articles timeline.sort timelineArticles timeline.title model.timelines
                     }
                   , Task.perform NewTime Time.now
                   )
@@ -261,20 +221,26 @@ update msg model =
             Ok payload ->
               case payload of
                 FreePayload articles _ ->
+                  let
+                    serviceData = Service.unwrap service
+                  in
                   ( { model | services =
                       Dict.insert
-                        service.name
-                        { service | articles = Dict.union (Article.listToDict articles) service.articles }
+                        serviceData.name
+                        (Service { serviceData | articles = Dict.union (Article.listToDict articles) serviceData.articles })
                         model.services
                     }
                   , Task.perform NewTime Time.now
                   )
 
                 RateLimitedPayload articles _ _ ->
+                  let
+                    serviceData = Service.unwrap service
+                  in
                   ( { model | services =
                       Dict.insert
-                        service.name
-                        { service | articles = Dict.union (Article.listToDict articles) service.articles }
+                        serviceData.name
+                        (Service { serviceData | articles = Dict.union (Article.listToDict articles) serviceData.articles })
                         model.services
                     }
                   , Task.perform NewTime Time.now
@@ -296,13 +262,14 @@ update msg model =
 
     RefreshEverything ->
       (model
-      , Cmd.batch
-          (List.filterMap (\timeline ->
-            getTimelineServiceEndpoint model.services timeline
-              |> Maybe.andThen (\(service, endpoint) ->
-                Just (getEndpoint service endpoint timeline)
-              )
-          ) model.timelines)
+      --, Cmd.batch
+      --    (List.filterMap (\timeline ->
+      --      getTimelineServiceEndpoint model.services timeline
+      --        |> Maybe.andThen (\(service, endpoint) ->
+      --          Just (getEndpoint service endpoint timeline)
+      --        )
+      --    ) model.timelines)
+      , Cmd.none
       )
 
     AdjustTimeZone newZone ->
@@ -333,6 +300,9 @@ update msg model =
       in
       (model, Cmd.none)
 
+    GotTimelineMsg subMsg ->
+      (model, Cmd.none)
+
 
 
 -- SUBSCRIPTIONS
@@ -340,9 +310,10 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  List.map (timelineRefreshSub Refresh model.services) model.timelines
-    |> Maybe.Extra.values
-    |> Sub.batch
+  --List.map (timelineRefreshSub Refresh model.services) model.timelines
+  --  |> Maybe.Extra.values
+  --  |> Sub.batch
+  Sub.none
 
 
 -- VIEW
@@ -350,10 +321,22 @@ subscriptions model =
 
 view : Model -> Browser.Document Msg
 view model =
+  let
+    timelines = List.filterMap identity
+      (List.map
+        (\timeline ->
+          Maybe.andThen
+            (\service -> Timeline.toViewTimeline service timeline)
+            (Dict.get timeline.serviceName model.services)
+        )
+        model.timelines
+      )
+  in
   { title = "SoshalThing"
   , body =
       [ viewSidebar model
-      , viewTimelineContainer model ]
+      , Html.map GotTimelineMsg (Timeline.viewTimelineContainer model.time timelines)
+      ]
   }
 
 
@@ -380,65 +363,16 @@ viewSidebarMenu model sidebarMenu =
       lazy viewServiceMenu (Dict.values model.services)
 
 
-viewServiceMenu : List (Service ArticleExt) -> Html Msg
+viewServiceMenu : List TwitterService -> Html Msg
 viewServiceMenu services =
   div [ class "sidebarMenu" ]
     <| List.map (lazy Service.viewServiceSettings) services
 
 
-viewTimelineContainer : Model -> Html Msg
-viewTimelineContainer model =
-  let
-    timelines = List.filterMap identity (List.map (Timeline.toViewTimeline model.services) model.timelines)
-  in
-  Html.Keyed.node "div" [ id "timelineContainer" ] (List.map (viewKeyedTimeline model) timelines)
-
-
-viewKeyedTimeline : Model -> (ViewTimeline ArticleExt) -> (String, Html Msg)
-viewKeyedTimeline model vTimeline =
-  (vTimeline.title, viewTimeline model vTimeline)
-
-
-viewTimeline : Model -> (ViewTimeline ArticleExt) -> Html Msg
-viewTimeline model vTimeline =
-  let
-    endpointReady = Service.isReady vTimeline.endpoint
-  in
-    div [ class "timeline" ]
-      [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
-        [ strong [] [ text vTimeline.title ]
-        , div [ class "timelineButtons" ]
-            [ button
-                (if endpointReady then [onClick (Refresh vTimeline.service vTimeline.endpoint vTimeline.data)] else [])
-                [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
-        ]
-      , lazy4 (viewContainer vTimeline.service) model.time vTimeline.filters vTimeline.compactMode vTimeline.articleIds
-      ]
-
-
-viewContainer : (Service ArticleExt) -> TimeModel -> Array (Filter ArticleExt) -> CompactMode -> List TimelineArticle -> Html Msg
-viewContainer service timeModel filters timelineCompact timelineArticles =
-  Html.Keyed.node "div" [ class "timelineArticles" ]
-    ( List.map2
-        (Tweet.viewKeyedTweet timeModel service)
-        (List.map (Timeline.isCompact timelineCompact) timelineArticles)
-        ( (Filter.filterArticles filters (Service.getTimelineArticles service (List.map .id timelineArticles)))
-            |> List.map (Tweet.toViewArticle service.articles)
-            |> List.filterMap identity
-        )
-    )
-
-
-viewIcon : String -> String -> String -> Html Msg
-viewIcon icon iconType size =
-  span [ class "icon" ]
-    [ i [ class iconType, class icon, class size ] [] ]
-
-
 -- HTTP
 
 
-postLike : (Service ArticleExt) -> (Article ArticleExt) -> Cmd Msg
+postLike : TwitterService -> (Article ArticleExt) -> Cmd Msg
 postLike service article =
   let
     social =
@@ -454,7 +388,7 @@ postLike service article =
       }
 
 
-postRetweet : (Service ArticleExt) -> (Article ArticleExt) -> Cmd Msg
+postRetweet : TwitterService -> (Article ArticleExt) -> Cmd Msg
 postRetweet service article =
   let
     social =
@@ -473,7 +407,7 @@ postRetweet service article =
         }
 
 
-getEndpoint : (Service ArticleExt) -> Endpoint -> (Timeline ArticleExt) -> Cmd Msg
+getEndpoint : TwitterService -> Endpoint -> (Timeline ArticleExt) -> Cmd Msg
 getEndpoint service endpoint timeline =
   let
     endpointData = Service.unwrapEndpoint endpoint
