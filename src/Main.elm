@@ -90,8 +90,10 @@ initTimelines =
     , articleIds = []
     , options = Dict.empty
     , interval = Just 64285
-    , filters = []
+    , filters = Array.fromList []
     , compactMode = Compact
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   , { title = "Art"
     , serviceName = "Twitter"
@@ -104,10 +106,13 @@ initTimelines =
           ]
     , interval = Just 9000
     , filters =
-        [ (HasMedia, ExcludeIfNot)
-        , (IsRepost, ExcludeIf)
-        ]
+        Array.fromList
+          [ { enabled = True, method = HasMedia, mode = ExcludeIfNot }
+          , { enabled = True, method = IsRepost, mode = ExcludeIf }
+          ]
     , compactMode = Expand
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   , { title = "1draw"
     , serviceName = "Twitter"
@@ -120,10 +125,13 @@ initTimelines =
           ]
     , interval = Just 9000
     , filters =
-        [ (HasMedia, ExcludeIfNot)
-        , (IsRepost, ExcludeIf)
-        ]
+        Array.fromList
+          [ { enabled = True, method = HasMedia, mode = ExcludeIfNot }
+          , { enabled = True, method = IsRepost, mode = ExcludeIf }
+          ]
     , compactMode = Compact
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   , { title = "User"
     , serviceName = "Twitter"
@@ -131,8 +139,10 @@ initTimelines =
     , articleIds = []
     , options = Dict.empty
     , interval = Just 9000
-    , filters = []
+    , filters = Array.fromList []
     , compactMode = Compact
+    , sort = Timeline.ByCreationDate
+    , showOptions = False
     }
   ]
 
@@ -213,7 +223,7 @@ update msg model =
                           Dict.insert service.name
                             { service | articles = Dict.union (Article.listToDict articles) service.articles }
                             model.services
-                      , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
+                      , timelines = updateTimelineArticles service.articles timeline.sort timelineArticles timeline.title model.timelines
                     }
                   , Task.perform NewTime Time.now
                   )
@@ -227,7 +237,7 @@ update msg model =
                               , endpoints = Service.updateEndpointRateLimit service.endpoints endpoint rateLimit
                             }
                             model.services
-                      , timelines = updateTimelineArticles timelineArticles timeline.title model.timelines
+                      , timelines = updateTimelineArticles service.articles timeline.sort timelineArticles timeline.title model.timelines
                     }
                   , Task.perform NewTime Time.now
                   )
@@ -377,12 +387,15 @@ viewServiceMenu services =
 
 viewTimelineContainer : Model -> Html Msg
 viewTimelineContainer model =
-  Html.Keyed.node "div" [ id "timelineContainer" ] (List.map (viewKeyedTimeline model) model.timelines)
+  let
+    timelines = List.filterMap identity (List.map (Timeline.toViewTimeline model.services) model.timelines)
+  in
+  Html.Keyed.node "div" [ id "timelineContainer" ] (List.map (viewKeyedTimeline model) timelines)
 
 
-viewKeyedTimeline : Model -> (Timeline ArticleExt) -> (String, Html Msg)
-viewKeyedTimeline model timeline =
-  (timeline.title, viewTimeline model timeline)
+viewKeyedTimeline : Model -> (ViewTimeline ArticleExt) -> (String, Html Msg)
+viewKeyedTimeline model vTimeline =
+  (vTimeline.title, viewTimeline model vTimeline)
 
 
 viewTimeline : Model -> (ViewTimeline ArticleExt) -> Html Msg
@@ -395,7 +408,7 @@ viewTimeline model vTimeline =
         [ strong [] [ text vTimeline.title ]
         , div [ class "timelineButtons" ]
             [ button
-                (if endpointReady then [onClick (Refresh vTimeline.service vTimeline.endpoint vTimeline)] else [])
+                (if endpointReady then [onClick (Refresh vTimeline.service vTimeline.endpoint vTimeline.data)] else [])
                 [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
         ]
       , lazy4 (viewContainer vTimeline.service) model.time vTimeline.filters vTimeline.compactMode vTimeline.articleIds
@@ -405,9 +418,13 @@ viewTimeline model vTimeline =
 viewContainer : (Service ArticleExt) -> TimeModel -> Array (Filter ArticleExt) -> CompactMode -> List TimelineArticle -> Html Msg
 viewContainer service timeModel filters timelineCompact timelineArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ]
-    ( List.map
+    ( List.map2
         (Tweet.viewKeyedTweet timeModel service)
-        (Filter.filterArticles filters (Service.getTimelineArticles service (List.map .id timelineArticles)))
+        (List.map (Timeline.isCompact timelineCompact) timelineArticles)
+        ( (Filter.filterArticles filters (Service.getTimelineArticles service (List.map .id timelineArticles)))
+            |> List.map (Tweet.toViewArticle service.articles)
+            |> List.filterMap identity
+        )
     )
 
 
@@ -422,31 +439,37 @@ viewIcon icon iconType size =
 
 postLike : (Service ArticleExt) -> (Article ArticleExt) -> Cmd Msg
 postLike service article =
-  case article.social of
-    Just social ->
-      Http.post
-        { url = UrlB.crossOrigin "http://localhost:5000" ["twitter", "v1", "favorites", if social.liked then "destroy" else "create"] [UrlB.string "id" article.id, UrlB.string "tweet_mode" "extended"]
-        , body = Http.emptyBody
-        , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
-        }
-
-    Nothing -> Cmd.none
+  let
+    social =
+      case article.ext of
+        Tweet.Tweet tweet -> tweet.social
+        Tweet.Retweet retweet -> retweet.social
+        Tweet.Quote quote -> quote.social
+  in
+    Http.post
+      { url = UrlB.crossOrigin "http://localhost:5000" ["twitter", "v1", "favorites", if social.liked then "destroy" else "create"] [UrlB.string "id" article.id, UrlB.string "tweet_mode" "extended"]
+      , body = Http.emptyBody
+      , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
+      }
 
 
 postRetweet : (Service ArticleExt) -> (Article ArticleExt) -> Cmd Msg
 postRetweet service article =
-  case article.social of
-    Just social ->
-      if social.reposted then
-        Cmd.none
-      else
-        Http.post
-          { url = UrlB.crossOrigin "http://localhost:5000" ["twitter", "v1", "statuses", "retweet"] [UrlB.string "id" article.id, UrlB.string "tweet_mode" "extended"]
-          , body = Http.emptyBody
-          , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
-          }
-
-    Nothing -> Cmd.none
+  let
+    social =
+      case article.ext of
+        Tweet.Tweet tweet -> tweet.social
+        Tweet.Retweet retweet -> retweet.social
+        Tweet.Quote quote -> quote.social
+  in
+    if social.reposted then
+      Cmd.none
+    else
+      Http.post
+        { url = UrlB.crossOrigin "http://localhost:5000" ["twitter", "v1", "statuses", "retweet"] [UrlB.string "id" article.id, UrlB.string "tweet_mode" "extended"]
+        , body = Http.emptyBody
+        , expect = Http.expectJson (GotServicePayload service) Tweet.payloadResponseDecoder
+        }
 
 
 getEndpoint : (Service ArticleExt) -> Endpoint -> (Timeline ArticleExt) -> Cmd Msg

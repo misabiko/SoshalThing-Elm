@@ -1,4 +1,4 @@
-module Tweet exposing (payloadResponseDecoder, viewKeyedTweet, ArticleExt)
+module Tweet exposing (payloadResponseDecoder, viewKeyedTweet, ArticleExt, toViewArticle, TweetExt(..))
 
 import Html exposing (..)
 import Html.Events exposing (onClick)
@@ -35,6 +35,14 @@ type alias ArticleExt =
 
 newArticle : Article.Id -> Time.Posix -> TweetExt -> Article ArticleExt
 newArticle id creationDate ext =
+  { id = id
+  , creationDate = creationDate
+  , ext = ext
+  }
+
+
+newViewArticle : Article.Id -> Time.Posix -> ViewTweetExt -> Article ViewArticleExt
+newViewArticle id creationDate ext =
   { id = id
   , creationDate = creationDate
   , ext = ext
@@ -87,6 +95,53 @@ type alias Repost service msg =
 
 
 -- VIEW
+
+
+toViewArticle : Article.Collection ArticleExt -> Article ArticleExt -> Maybe (Article ViewArticleExt)
+toViewArticle articles article =
+  let
+    getArticle id =
+      Maybe.andThen
+        (\shared ->
+          case shared.ext of
+            Tweet tweet -> Just
+              ( newViewArticle shared.id shared.creationDate (ViewTweet tweet)
+              , tweet
+              )
+
+            Retweet _ -> Nothing
+
+            Quote _ -> Nothing
+        )
+        (Article.get articles id)
+  in
+  Maybe.andThen
+    (\ext ->
+      Just
+        ( newViewArticle
+            article.id
+            article.creationDate
+            ext
+        )
+    )
+    ( case article.ext of
+        Tweet tweet ->
+          Just (ViewTweet tweet)
+
+        Retweet retweet ->
+          Maybe.andThen
+            (\(retweeted, tweetData) ->
+              Just (ViewRetweet (retweet, retweeted, tweetData))
+            )
+            (getArticle retweet.retweeted)
+
+        Quote quote ->
+          Maybe.andThen
+            (\(quoted, tweetData) ->
+              Just (ViewQuote (quote, quoted, tweetData))
+            )
+            (getArticle quote.quoted)
+    )
 
 
 viewIcon : String -> String -> String -> Html msg
