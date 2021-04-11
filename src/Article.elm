@@ -8,7 +8,6 @@ module Article exposing
 
 import Dict exposing (Dict)
 import Time
-import Html.Attributes exposing (autoplay)
 
 
 type alias Article a =
