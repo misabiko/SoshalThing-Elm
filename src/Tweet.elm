@@ -1,4 +1,4 @@
-module Tweet exposing ({-payloadResponseDecoder, -}viewKeyedTweet)
+module Tweet exposing ({-payloadResponseDecoder, -}viewKeyedTweet, ArticleExt)
 
 import Html exposing (..)
 import Html.Events exposing (onClick)

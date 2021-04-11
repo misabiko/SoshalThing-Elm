@@ -7,20 +7,21 @@ import Html.Attributes exposing (..)
 import Html.Lazy exposing (..)
 import Html.Keyed
 import Dict exposing (Dict)
+import Array exposing (Array)
 import Http
 import Time
 import Task
 import Url.Builder as UrlB
 import Maybe.Extra
 
-import Article exposing (Article, ShareableArticle)
+import Article exposing (Article)
 import Service exposing (Service, Endpoint, Payload(..), RateLimitInfo)
 import Timeline exposing
-    ( Timeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..), timelineArticlesToShareable
-    , updateTimelineArticles, timelineSortArticles, getTimelineServiceEndpoint
-    , timelineRefreshSub, TimelineShareable
+    ( Timeline, ViewTimeline, TimelineArticle, timelineArticlesToIds, isCompact, CompactMode(..)
+    , updateTimelineArticles, getTimelineServiceEndpoint
+    , timelineRefreshSub
     )
-import Tweet
+import Tweet exposing (ArticleExt)
 import Filter exposing (..)
 
 
@@ -56,8 +57,8 @@ type Sidebar
 
 
 type alias Model =
-  { services: Dict String Service
-  , timelines: List Timeline
+  { services: Dict String (Service ArticleExt)
+  , timelines: List (Timeline ArticleExt)
   , time : TimeModel
   , sidebar : Sidebar
   }
@@ -81,7 +82,7 @@ init _ =
   )
 
 
-initTimelines : List Timeline
+initTimelines : List (Timeline ArticleExt)
 initTimelines =
   [ { title = "Home"
     , serviceName = "Twitter"
@@ -136,7 +137,7 @@ initTimelines =
   ]
 
 
-initTwitter : (String, Service)
+initTwitter : (String, (Service ArticleExt))
 initTwitter =
   ( "Twitter"
   , { name = "Twitter"
@@ -184,17 +185,17 @@ initTwitterEndpoint name path options maybeRateLimit =
 
 
 type Msg
-  = GotPayload Service Endpoint Timeline (Result Http.Error (Result (List (String, Int)) Payload))
-  | GotServicePayload Service (Result Http.Error (Result (List (String, Int)) Payload))
-  | Refresh Service Endpoint Timeline
+  = GotPayload (Service ArticleExt) Endpoint (Timeline ArticleExt) (Result Http.Error (Result (List (String, Int)) (Payload ArticleExt)))
+  | GotServicePayload (Service ArticleExt) (Result Http.Error (Result (List (String, Int)) (Payload ArticleExt)))
+  | Refresh (Service ArticleExt) Endpoint (Timeline ArticleExt)
   | RefreshEverything
   | AdjustTimeZone Time.Zone
   | NewTime Time.Posix
-  | Like Service Article
-  | Repost Service Article
+  | Like (Service ArticleExt) (Article ArticleExt)
+  | Repost (Service ArticleExt) (Article ArticleExt)
   | HideSidebarMenu
   | ShowSidebarMenu SidebarMenu
-  | DebugArticle Article
+  | DebugArticle (Article ArticleExt)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -368,7 +369,7 @@ viewSidebarMenu model sidebarMenu =
       lazy viewServiceMenu (Dict.values model.services)
 
 
-viewServiceMenu : List Service -> Html Msg
+viewServiceMenu : List (Service ArticleExt) -> Html Msg
 viewServiceMenu services =
   div [ class "sidebarMenu" ]
     <| List.map (lazy Service.viewServiceSettings) services
@@ -379,40 +380,34 @@ viewTimelineContainer model =
   Html.Keyed.node "div" [ id "timelineContainer" ] (List.map (viewKeyedTimeline model) model.timelines)
 
 
-viewKeyedTimeline : Model -> Timeline -> (String, Html Msg)
+viewKeyedTimeline : Model -> (Timeline ArticleExt) -> (String, Html Msg)
 viewKeyedTimeline model timeline =
   (timeline.title, viewTimeline model timeline)
 
 
-viewTimeline : Model -> Timeline -> Html Msg
-viewTimeline model timeline =
-  case (getTimelineServiceEndpoint model.services timeline) of
-    Nothing ->
-      text (Debug.log (timeline.title ++ " Error") "Couldn't find service or endpoint.")
-    
-    Just (service, endpoint) ->
-      let
-        endpointReady = Service.isReady endpoint
-      in
-        div [ class "timeline" ]
-          [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
-            [ strong [] [ text timeline.title ]
-            , div [ class "timelineButtons" ]
-                [ button
-                    (if endpointReady then [onClick (Refresh service endpoint timeline)] else [])
-                    [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
-            ]
-          , lazy4 (viewContainer service) model.time timeline.filters timeline.compactMode (timelineArticlesToShareable timeline.articleIds (Article.getShareableArticles service.articles (timelineArticlesToIds timeline.articleIds)))
-          ]
+viewTimeline : Model -> (ViewTimeline ArticleExt) -> Html Msg
+viewTimeline model vTimeline =
+  let
+    endpointReady = Service.isReady vTimeline.endpoint
+  in
+    div [ class "timeline" ]
+      [ div [ class "timelineHeader", classList [("timelineInvalid", not endpointReady)] ]
+        [ strong [] [ text vTimeline.title ]
+        , div [ class "timelineButtons" ]
+            [ button
+                (if endpointReady then [onClick (Refresh vTimeline.service vTimeline.endpoint vTimeline)] else [])
+                [ viewIcon "fa-sync-alt" "fas" "fa-lg" ] ]
+        ]
+      , lazy4 (viewContainer vTimeline.service) model.time vTimeline.filters vTimeline.compactMode vTimeline.articleIds
+      ]
 
 
-viewContainer : Service -> TimeModel -> List Filter -> CompactMode -> List TimelineShareable -> Html Msg
-viewContainer service timeModel filters timelineCompact timelineShareables =
+viewContainer : (Service ArticleExt) -> TimeModel -> Array (Filter ArticleExt) -> CompactMode -> List TimelineArticle -> Html Msg
+viewContainer service timeModel filters timelineCompact timelineArticles =
   Html.Keyed.node "div" [ class "timelineArticles" ]
-    ( List.map2
-        (Tweet.viewKeyedTweet Like Repost DebugArticle timeModel service)
-        (List.map (\ts -> isCompact timelineCompact ts) timelineShareables)
-        (Filter.filterShareableArticles filters (List.map (\ts -> ts.shareableArticle) timelineShareables))
+    ( List.map
+        (Tweet.viewKeyedTweet timeModel service)
+        (Filter.filterArticles filters (Service.getTimelineArticles service (List.map .id timelineArticles)))
     )
 
 
@@ -425,7 +420,7 @@ viewIcon icon iconType size =
 -- HTTP
 
 
-postLike : Service -> Article -> Cmd Msg
+postLike : (Service ArticleExt) -> (Article ArticleExt) -> Cmd Msg
 postLike service article =
   case article.social of
     Just social ->
@@ -438,7 +433,7 @@ postLike service article =
     Nothing -> Cmd.none
 
 
-postRetweet : Service -> Article -> Cmd Msg
+postRetweet : (Service ArticleExt) -> (Article ArticleExt) -> Cmd Msg
 postRetweet service article =
   case article.social of
     Just social ->
@@ -454,7 +449,7 @@ postRetweet service article =
     Nothing -> Cmd.none
 
 
-getEndpoint : Service -> Endpoint -> Timeline -> Cmd Msg
+getEndpoint : (Service ArticleExt) -> Endpoint -> (Timeline ArticleExt) -> Cmd Msg
 getEndpoint service endpoint timeline =
   let
     endpointData = Service.unwrapEndpoint endpoint
