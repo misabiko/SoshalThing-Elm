@@ -1,6 +1,7 @@
 module Service exposing
   ( Service
   , Endpoint, isReady, newEndpoint, unwrapEndpoint, updateEndpointRateLimit
+  , getTimelineArticles, getArticlesList
   , Payload(..)
   , RateLimitInfo, initRateLimit
   , viewServiceSettings
@@ -17,10 +18,10 @@ import Maybe.Extra exposing (unwrap)
 import Parser exposing (end)
 
 
-type alias Service =
+type alias Service a =
   { name: String
   , endpoints: Dict String Endpoint
-  , articles: Article.Collection
+  , articles: Article.Collection a
   }
 
 
@@ -39,12 +40,12 @@ type alias EndpointData =
   }
 
 
-type Payload
+type Payload a
   = FreePayload
-      (List Article)
+      (List (Article a))
       (List Article.Id)
   | RateLimitedPayload
-      (List Article)
+      (List (Article a))
       (List Article.Id)
       RateLimitInfo
 
@@ -95,10 +96,20 @@ updateEndpointRateLimit endpoints endpoint rateLimit =
       Dict.insert data.name (Ready { data | rateLimit = Just rateLimit}) endpoints
 
 
+getTimelineArticles : Service a -> List Article.Id -> List (Article a)
+getTimelineArticles service ids =
+  List.filterMap (Article.get service.articles) ids
+
+
+getArticlesList : Service a -> List (Article a)
+getArticlesList service =
+  Dict.values service.articles
+
+
 -- VIEW
 
 
-viewServiceSettings : Service -> Html msg
+viewServiceSettings : Service a -> Html msg
 viewServiceSettings service =
   div [ class "box" ]
     ( (text service.name) ::

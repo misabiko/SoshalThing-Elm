@@ -1,39 +1,76 @@
 module Timeline exposing
-    ( Timeline, TimelineArticle, TimelineShareable, timelineArticlesToIds, timelineArticlesToShareable, isCompact, CompactMode(..)
+    ( Timeline, TimelineArticle, ViewTimeline, toViewTimeline, timelineArticlesToIds, isCompact, CompactMode(..)
     , updateTimelineArticles, getTimelineServiceEndpoint
     , timelineRefreshSub, SortMethod(..)
     )
 
 import Dict exposing (Dict)
+import Array exposing (Array)
 import Time
 import List.Extra as ListE
 
-import Article exposing (Article, ShareableArticle, getShareableArticles)
+import Article exposing (Article)
 import Service exposing (Service, Endpoint)
 import Filter exposing (..)
 
 
-type alias Timeline =
+type alias Timeline a =
   { title: String
   , serviceName: String
   , endpointName: String
   , articleIds: List TimelineArticle
   , options: Dict String String
   , interval: Maybe Int
-  , filters: List Filter
+  , filters: Array (Filter a)
   , compactMode: CompactMode
-  , sort: SortMethod
+  , sort: SortMethod a
+  , showOptions: Bool
   }
+
+
+type alias ViewTimeline a =
+  { title: String
+  , service: Service a
+  , endpoint: Endpoint
+  , articleIds: List TimelineArticle
+  , options: Dict String String
+  , interval: Maybe Int
+  , filters: Array (Filter a)
+  , compactMode: CompactMode
+  , sort: SortMethod a
+  , showOptions: Bool
+  , data: Timeline a
+  }
+
+
+toViewTimeline : Dict String (Service a) -> Timeline a -> Maybe (ViewTimeline a)
+toViewTimeline services timeline =
+  Maybe.andThen
+    (\service ->
+      Maybe.andThen
+        (\endpoint ->
+          Just
+            { title = timeline.title
+            , service = service
+            , endpoint = endpoint
+            , articleIds = timeline.articleIds
+            , options = timeline.options
+            , interval = timeline.interval
+            , filters = timeline.filters
+            , compactMode = timeline.compactMode
+            , sort = timeline.sort
+            , showOptions = timeline.showOptions
+            , data = timeline
+            }
+        )
+        (Dict.get timeline.endpointName service.endpoints)
+    )
+    (Dict.get timeline.serviceName services)
+
 
 
 type alias TimelineArticle =
   { id: Article.Id
-  , compact: SettingOverride CompactMode
-  }
-
-
-type alias TimelineShareable =
-  { shareableArticle: ShareableArticle
   , compact: SettingOverride CompactMode
   }
 
@@ -48,10 +85,11 @@ type CompactMode
   | Expand
 
 
-type SortMethod
+type SortMethod a
   = Unsorted
   | ById
   | ByCreationDate
+  | ByIndex ((Article a) -> Int)
 
 
 newTimelineArticle : Article.Id -> TimelineArticle
@@ -61,7 +99,7 @@ newTimelineArticle id =
   }
 
 
-isCompact : CompactMode -> TimelineShareable -> Bool
+isCompact : CompactMode -> TimelineArticle -> Bool
 isCompact timelineCompactMode timelineShareable =
   case (timelineShareable.compact) of
     Overrided compactMode ->
@@ -75,7 +113,7 @@ isCompact timelineCompactMode timelineShareable =
         Expand -> False
 
 
-updateTimelineArticles : Article.Collection -> SortMethod -> List Article.Id -> String -> List Timeline -> List Timeline 
+updateTimelineArticles : Article.Collection a -> SortMethod a -> List Article.Id -> String -> List (Timeline a) -> List (Timeline a)
 updateTimelineArticles articles sortMethod articleIds timelineTitle timelines =
   List.map (\timeline -> 
     if timeline.title == timelineTitle then
@@ -100,26 +138,36 @@ timelineArticlesToIds timelineArticles =
   List.map (\article -> article.id) timelineArticles
 
 
-timelineArticlesToShareable : List TimelineArticle -> List ShareableArticle -> List TimelineShareable
-timelineArticlesToShareable timelineArticles shareableArticles =
-  List.map2 (
-    \timelineArticle shareableArticle ->
-      TimelineShareable shareableArticle timelineArticle.compact
-  ) timelineArticles shareableArticles 
-
-
-timelineSortArticles : Article.Collection -> SortMethod -> List TimelineArticle -> List TimelineArticle
+timelineSortArticles : Article.Collection a -> SortMethod a -> List TimelineArticle -> List TimelineArticle
 timelineSortArticles articles sortMethod articleIds =
   case sortMethod of
+    Unsorted -> articleIds
+
+    ByCreationDate ->
+      List.sortBy (\timelineArticle ->
+        case (Dict.get timelineArticle.id articles) of
+          Just article ->
+            Time.posixToMillis article.creationDate
+
+          Nothing -> 0
+      ) articleIds
+
     ById ->
       articleIds
         |> List.sortBy (\timelineArticle -> Maybe.withDefault 0 (String.toInt (timelineArticle.id)))
         |> List.reverse
 
-    _ -> articleIds
+    ByIndex getIndex ->
+      List.sortBy (\timelineArticle ->
+        case (Dict.get timelineArticle.id articles) of
+          Just article ->
+            getIndex article
+
+          Nothing -> 0
+      ) articleIds
 
 
-getTimelineServiceEndpoint : Dict String Service -> Timeline -> Maybe (Service, Endpoint)
+getTimelineServiceEndpoint : Dict String (Service a) -> Timeline a -> Maybe ((Service a), Endpoint)
 getTimelineServiceEndpoint services timeline =
   case (Dict.get timeline.serviceName services) of
     Just service ->
@@ -132,7 +180,7 @@ getTimelineServiceEndpoint services timeline =
     Nothing -> Nothing
 
 
-timelineRefreshSub : (Service -> Endpoint -> Timeline -> msg) -> Dict String Service -> Timeline -> Maybe (Sub msg)
+timelineRefreshSub : (Service a -> Endpoint -> Timeline a -> msg) -> Dict String (Service a) -> Timeline a -> Maybe (Sub msg)
 timelineRefreshSub refreshMsg services timeline =
   case ((getTimelineServiceEndpoint services timeline), timeline.interval) of
     (Just (service, endpoint), Just interval) ->
