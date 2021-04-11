@@ -1,4 +1,4 @@
-module Tweet exposing ({-payloadResponseDecoder, -}viewKeyedTweet, ArticleExt)
+module Tweet exposing (payloadResponseDecoder, viewKeyedTweet, ArticleExt)
 
 import Html exposing (..)
 import Html.Events exposing (onClick)
@@ -31,6 +31,14 @@ type ViewTweetExt
 
 type alias ArticleExt =
   { ext: TweetExt }
+
+
+newArticle : Article.Id -> Time.Posix -> TweetExt -> Article ArticleExt
+newArticle id creationDate ext =
+  { id = id
+  , creationDate = creationDate
+  , ext = ext
+  }
 
 
 type alias ViewArticleExt =
@@ -340,7 +348,7 @@ getViewTweetId vTweet =
 -- DECODE
 
 
-{-unpackDecodedTweets : Maybe RateLimitInfo -> List (Article ViewArticleExt) -> Payload ArticleExt
+unpackDecodedTweets : Maybe RateLimitInfo -> List (Article ArticleExt, Maybe (Article ArticleExt)) -> Payload ArticleExt
 unpackDecodedTweets maybeRateLimit decodedTweets =
   List.map unpackDecodedTweet decodedTweets
   |> List.unzip
@@ -360,14 +368,14 @@ unpackDecodedTweets maybeRateLimit decodedTweets =
   )
 
 
-unpackDecodedTweet : (Article ViewArticleExt) -> (List (Article ArticleExt), String)
+unpackDecodedTweet : (Article ArticleExt, Maybe (Article ArticleExt)) -> (List (Article ArticleExt), String)
 unpackDecodedTweet decodedTweet =
-  ( case decodedTweet.shared of
+  ( case (Tuple.second decodedTweet) of
           Just shared ->
-            [decodedTweet.tweet, shared]
+            [Tuple.first decodedTweet, shared]
           Nothing ->
-            [decodedTweet.tweet]
-  , decodedTweet.tweet.id
+            [Tuple.first decodedTweet]
+  , (Tuple.first decodedTweet).id
   )
 
 
@@ -393,52 +401,61 @@ rateLimitDecoder =
     (Decode.at ["_headers", "x-rate-limit-reset"] DecodeE.parseInt)
 
 
-tweetDecoder : Decoder (Article ViewArticleExt)
+tweetDecoder : Decoder (Article ArticleExt, Maybe (Article ArticleExt))
 tweetDecoder =
-  Decode.andThen (\vTweet ->
-      case (getTweetType vTweet) of
-        Quote ->
+  Decode.andThen (\(article, maybeShared) ->
+      case article.ext of
+        Quote quote ->
           Decode.andThen (\maybeQuoteUrl ->
-            Decode.succeed { vTweet
-              | article = fixTweetText maybeQuoteUrl vTweet.tweet
-              , shared = Maybe.map (fixTweetText maybeQuoteUrl) vTweet.shared
-            }
+            Decode.succeed
+              ( fixTweetText maybeQuoteUrl article
+              , Maybe.map (fixTweetText maybeQuoteUrl) maybeShared
+              )
           )
           (Decode.maybe (Decode.at ["quoted_status_permalink", "url"] Decode.string))
 
         _ ->
-          Decode.succeed { vTweet
-            | article = fixTweetText Nothing vTweet.tweet
-            , shared = Maybe.map (fixTweetText Nothing) vTweet.shared
-          }
+          Decode.succeed
+            ( fixTweetText Nothing article
+            , Maybe.map (fixTweetText Nothing) maybeShared
+            )
     )
-    (Decode.map2 (Article ViewArticleExt)
-      topTweetDecoder
-      (Decode.maybe
-        (Decode.oneOf
-          [ field "quoted_status" topTweetDecoder
-          , field "retweeted_status" topTweetDecoder
-          ]
-        )))
+    ( Decode.map2 Tuple.pair
+        topTweetDecoder
+        (Decode.maybe
+          (Decode.oneOf
+            [ field "quoted_status" topTweetDecoder
+            , field "retweeted_status" topTweetDecoder
+            ]
+          )
+        )
+    )
 
 
 fixTweetText : Maybe String -> (Article ArticleExt) -> (Article ArticleExt)
 fixTweetText maybeQuoteUrl article =
-  case article.text of
-    Just textStr ->
-      {article | text =
-        Just ((case article.media of
-          Just media -> fixTweetTextMedia media textStr
-          Nothing -> textStr
-        )
-          |> (\newTextStr -> case maybeQuoteUrl of
-                Just quoteUrl -> 
-                  String.replace quoteUrl "" newTextStr
-                    |> String.trimRight
-                Nothing -> newTextStr
-             ))
-      }
-    Nothing -> article
+  let
+    fixText text maybeMedia =
+      (case maybeMedia of
+        Just media -> fixTweetTextMedia media text
+        Nothing -> text
+      )
+        |> (\newTextStr -> case maybeQuoteUrl of
+              Just quoteUrl -> 
+                String.replace quoteUrl "" newTextStr
+                  |> String.trimRight
+              Nothing -> newTextStr
+          )
+
+  in
+  case article.ext of
+    Tweet tweet ->
+      { article | ext = Tweet { tweet | text = fixText tweet.text tweet.media } }
+
+    Quote quote ->
+      { article | ext = Quote { quote | text = fixText quote.text Nothing } }
+
+    _ -> article
 
 
 fixTweetTextMedia : MediaContent -> String -> String
@@ -450,22 +467,46 @@ fixTweetTextMedia media textStr =
       ) textStr imageDatas
       |> String.trimRight
 
+    Image imageData ->
+      String.replace imageData.compressedUrl "" textStr
+      |> String.trimRight
+
     Video videoData ->
       String.replace videoData.compressedUrl "" textStr
       |> String.trimRight
 
 topTweetDecoder : Decoder (Article ArticleExt)
 topTweetDecoder =
-  Decode.succeed Article
-    |> DecodeP.required "id_str" string
-    |> DecodeP.custom (Decode.andThen
+  Decode.map3 newArticle
+    (field "id_str" string)
+    (Decode.andThen
       TimeParser.tweetTimeDecoder
       (field "created_at" string)
     )
-    |> DecodeP.custom (Decode.maybe textDecoder)
-    |> DecodeP.custom (Decode.maybe socialDecoder)
-    |> DecodeP.custom (Decode.maybe shareDecoder)
-    |> DecodeP.custom (Decode.maybe mediaDecoder)
+    tweetExtDecoder
+
+
+tweetExtDecoder : Decoder TweetExt
+tweetExtDecoder =
+  Decode.oneOf
+    [ Decode.map Quote
+          (Decode.map3 QuoteData
+            textDecoder
+            socialDecoder
+            (Decode.at ["quoted_status", "id_str"] Decode.string)
+          )
+    , Decode.map Retweet
+        ( Decode.map2 RetweetData
+            socialDecoder
+            (Decode.at ["retweeted_status", "id_str"] Decode.string)
+        )
+    , Decode.map Tweet
+        ( Decode.map3 TweetData
+            textDecoder
+            socialDecoder
+            (maybe mediaDecoder)
+        )
+    ]
 
 
 socialDecoder : Decoder SocialData
@@ -478,14 +519,6 @@ socialDecoder =
     |> DecodeP.required "retweeted" bool
     |> DecodeP.required "favorite_count" int
     |> DecodeP.required "retweet_count" int
-
-
-shareDecoder : Decoder Article.Id
-shareDecoder =
-  Decode.oneOf
-    [ Decode.at ["retweeted_status", "id_str"] Decode.string
-    , Decode.at ["quoted_status", "id_str"] Decode.string
-    ]
 
 
 textDecoder : Decoder String
@@ -558,6 +591,7 @@ sizeDecoder =
     (field "w" Decode.int)
     (field "h" Decode.int)
 
+
 videoDecoder : Bool -> Decoder MediaContent
 videoDecoder autoplay =
   Decode.andThen
@@ -595,4 +629,4 @@ payloadResponseDecoder =
             Decode.succeed (Err errors)
           _ ->
             Decode.map Ok payloadDecoder)
-        (maybe (field "errors" payloadErrorsDecoder))-}
+        (maybe (field "errors" payloadErrorsDecoder))
