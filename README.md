@@ -10,5 +10,5 @@ Serve the app with: `npm run server` <br />
 
 ---
 
-Elm is very fun to work with, with minimal dependencies and the app and proxy is served on the same expressjs web server. <br />
+Elm is very fun to work with, with minimal dependencies and both the app and proxy are served on the same expressjs web server. <br />
 But the type system wasn't flexible/strong enough to support the multiple services and article types architecture that SoshalThing needs.
