@@ -1,7 +1,7 @@
 # SoshalThing-Elm
 
 An Elm port of SoshalThing, a TweetDeck-style app to support various services (though only Twitter on this version). <br />
-At the time of writing, the main version of SoshalThing is on Vue 3: https://github.com/misabiko/SoshalThing
+At the time of writing, the active version of SoshalThing is on Rust using Yew: https://github.com/misabiko/SoshalThingYew
 
 ---
 
